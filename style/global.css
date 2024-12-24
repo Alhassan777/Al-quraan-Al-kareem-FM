@@ -126,3 +126,11 @@ footer a {
 .grid-cols-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr)); /* Equivalent to Tailwind's grid-cols-3 */
 }
+
+.filter-red {
+  filter: invert(15%) sepia(95%) saturate(6932%) hue-rotate(358deg) brightness(95%) contrast(112%);
+}
+
+.filter-gray {
+  filter: invert(47%) sepia(0%) saturate(0%) hue-rotate(153deg) brightness(91%) contrast(92%);
+}

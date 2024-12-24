@@ -12,16 +12,6 @@ export default function Home() {
   const [statusType, setStatusType] = useState("default");
   const [volume, setVolume] = useState(80);
 
-  // Ensure volume is set correctly when the component mounts
-  useEffect(() => {
-    if (volume === 0) {
-      setStatusMessage("تم كتم الصوت.");
-      setStatusType("info");
-    } else {
-      setStatusMessage(`تم ضبط مستوى الصوت إلى ${volume}%.`);
-      setStatusType("info");
-    }
-  }, [volume]);
 
   const handleVolumeChange = (newVolume) => {
     setVolume(newVolume);
