@@ -1,0 +1,8 @@
+# Ignore dependencies
+node_modules/
+
+# Ignore Next.js build output
+.next/
+
+# Ignore log files
+*.log
