@@ -10,18 +10,16 @@ const Header = ({ title, subtitle }) => {
       <h1 className="text-3xl font-bold">{title}</h1>
       {subtitle && <p className="text-lg mt-2 font-medium">{subtitle}</p>}
 
-      {/* Navigation Links */}
-      <nav className="mt-4">
-        {/* Note: Use "href" instead of "to" when using next/link */}
+      <nav className="mt-4 flex justify-center gap-8">
         <Link
           href="/"
-          className="mr-4 text-[#C4A661] underline hover:text-[#E3B862] transition"
+          className="text-[#C4A661] underline hover:text-[#E3B862] transition duration-200"
         >
           الصفحة الرئيسية
         </Link>
         <Link
           href="/schedule"
-          className="text-[#C4A661] underline hover:text-[#E3B862] transition"
+          className="text-[#C4A661] underline hover:text-[#E3B862] transition duration-200"
         >
           جدول البرامج
         </Link>

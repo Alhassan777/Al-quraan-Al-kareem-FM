@@ -10,6 +10,10 @@
     "build:css": "npx tailwindcss -i style/global.css -o ./dist/styles.css --watch"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.1.1",
+    "@shadcn/ui": "^0.0.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "express": "^4.21.2",
     "lamejs": "^1.2.1",
     "lucide-react": "^0.469.0",
@@ -18,6 +22,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.1",
+    "shadcn-ui": "^0.9.4",
+    "tailwind-merge": "^2.6.0",
     "wavesurfer.js": "^7.8.12"
   },
   "devDependencies": {

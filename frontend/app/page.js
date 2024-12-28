@@ -3,7 +3,6 @@
 import Header from './components/Header.jsx';
 import Player from './components/Player.jsx';
 import Status from './components/Status.jsx';
-import VolumeSlider from './components/VolumeSlider.jsx';
 import { useState } from 'react';
 import '../style/global.css';
 
@@ -17,15 +16,14 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A1828] text-[#C4A661]">
-      {/* Updated Header Component */}
+    <div className="min-h-screen bg-[#0A1828] text-[#C4A661] flex flex-col items-center">
+      {/* Header Component */}
       <Header
-        title="إذاعة القرآن الكريم"
-        subtitle="استمع لأجمل تلاوات القرآن الكريم"
+        subtitle=" إذاعة القرآن الكريم من القاهرة"
       />
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <main className="w-full max-w-5xl px-4 py-6 space-y-6">
         {/* Status Display */}
         <Status message={statusMessage} type={statusType} />
 
@@ -35,9 +33,6 @@ export default function Home() {
           setStatusMessage={setStatusMessage}
           setStatusType={setStatusType}
         />
-
-        {/* Volume Slider Component */}
-        <VolumeSlider volume={volume} onVolumeChange={handleVolumeChange} />
       </main>
     </div>
   );

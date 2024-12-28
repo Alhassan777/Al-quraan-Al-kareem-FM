@@ -3,28 +3,90 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Play, Pause, Mic, StopCircle } from "lucide-react";
 
+// ----------------------------------------------------------------
+//  VolumeSlider component
+// ----------------------------------------------------------------
+const VolumeSlider = ({ volume, onVolumeChange }) => {
+  const [status, setStatus] = useState("مرحبًا بك! جاهز لتعديل مستوى الصوت.");
+
+  const handleVolumeChange = (e) => {
+    const newVolume = Number(e.target.value); // 0–100
+    onVolumeChange(newVolume);
+
+    if (newVolume === 0) {
+      setStatus("تم كتم الصوت.");
+    } else {
+      setStatus(`تم تعديل مستوى الصوت إلى ${newVolume}%.`);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    e.preventDefault();
+    const step = 5; // Adjust step as needed
+    let newVolume = volume;
+
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowUp":
+        newVolume = Math.min(volume + step, 100);
+        break;
+      case "ArrowLeft":
+      case "ArrowDown":
+        newVolume = Math.max(volume - step, 0);
+        break;
+      default:
+        return;
+    }
+
+    onVolumeChange(newVolume);
+    if (newVolume === 0) {
+      setStatus("تم كتم الصوت.");
+    } else {
+      setStatus(`تم تعديل مستوى الصوت إلى ${newVolume}%.`);
+    }
+  };
+
+  return (
+    <div className="bg-[#112436] p-6 rounded-lg shadow-md text-[#C4A661] w-full max-w-md">
+      <input
+        dir="ltr"
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={volume}
+        onChange={handleVolumeChange}
+        onKeyDown={handleKeyDown}
+        className="w-full h-2 bg-[#C4A661]/20 rounded-full appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, #C4A661 ${volume}%, rgba(196, 166, 97, 0.2) ${volume}%)`,
+        }}
+      />
+      <div className="status p-3 rounded-md mt-4 text-lg shadow-md bg-[#112436]">
+        <p>{status}</p>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------
+//  Player component
+// ----------------------------------------------------------------
 const Player = () => {
-  // ----------------------------------
-  //           STATE
-  // ----------------------------------
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Ready to play");
   const [recordedChunks, setRecordedChunks] = useState([]);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(1); // Normalized volume (0–1)
   const [recordingDuration, setRecordingDuration] = useState(10);
   const [isConverting, setIsConverting] = useState(false);
   const [isLive, setIsLive] = useState(false);
 
-  // For blinking streaming icon
+  // Visual indicators
   const [streamingBlink, setStreamingBlink] = useState(false);
-
-  // For flip animation on recording icon
   const [recordingFlip, setRecordingFlip] = useState(false);
 
-  // ----------------------------------
-  //           REFS
-  // ----------------------------------
+  // Refs
   const audioRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioCtxRef = useRef(null);
@@ -32,11 +94,11 @@ const Player = () => {
   const destinationNodeRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
 
-  // Replace with your actual stream URL(s)
+  // The URL to your proxied or direct stream
   const streamUrls = ["http://localhost:3001/proxyStream"];
 
   // ----------------------------------
-  //   EFFECTS: AUDIO INIT
+  //   EFFECT: Initialize Audio
   // ----------------------------------
   useEffect(() => {
     if (typeof window.lamejs === "undefined") {
@@ -50,12 +112,12 @@ const Player = () => {
       }
 
       try {
-        // Set up audio context if not already done
+        // Create or resume an AudioContext
         if (!audioCtxRef.current) {
           audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        // Create media element source if not already done
+        // Create media element source
         if (!sourceNodeRef.current) {
           sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(audioRef.current);
           sourceNodeRef.current.connect(audioCtxRef.current.destination);
@@ -67,7 +129,7 @@ const Player = () => {
           sourceNodeRef.current.connect(destinationNodeRef.current);
         }
 
-        // Create and configure MediaRecorder if not already done
+        // Create a MediaRecorder
         if (!mediaRecorderRef.current) {
           const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
             ? "audio/webm;codecs=opus"
@@ -80,7 +142,7 @@ const Player = () => {
 
           recorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
-              setRecordedChunks((chunks) => [...chunks, event.data]);
+              setRecordedChunks((prev) => [...prev, event.data]);
             }
           };
 
@@ -96,87 +158,78 @@ const Player = () => {
 
     initializeAudio();
 
-    // Cleanup
     return () => {
       if (audioCtxRef.current) {
-        audioCtxRef.current.close();
+        audioCtxRef.current.close().catch((err) => {
+          console.error("Error closing audio context:", err);
+        });
       }
     };
   }, []);
 
   // ----------------------------------
-  //   EFFECT: BLINKING (STREAMING)
+  //   EFFECT: Blinking (Streaming)
   // ----------------------------------
   useEffect(() => {
     let intervalId;
-
     if (isLive) {
-      // Toggle streamingBlink every 500 ms to blink
       intervalId = setInterval(() => {
         setStreamingBlink((prev) => !prev);
       }, 500);
     } else {
-      // If streaming is off, ensure blink is false
       setStreamingBlink(false);
     }
-
     return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
+      if (intervalId) clearInterval(intervalId);
     };
   }, [isLive]);
 
   // ----------------------------------
-  //   EFFECT: FLIP ANIMATION (REC)
+  //   EFFECT: Flip Animation (REC)
   // ----------------------------------
   useEffect(() => {
-    // Trigger flip animation whenever isRecording changes
     setRecordingFlip(true);
-
     const timer = setTimeout(() => {
       setRecordingFlip(false);
-    }, 300); // match the duration of flip animation in CSS
-
+    }, 300);
     return () => clearTimeout(timer);
   }, [isRecording]);
 
   // ----------------------------------
   //   DERIVED IMAGE PATHS
   // ----------------------------------
-  // 1) Streaming image: if isLive => blink between On/Off, else always Off
   const streamingSrc = isLive
     ? streamingBlink
       ? "Streaming On.png"
       : "Streaming Off.png"
     : "Streaming Off.png";
-
-  // 2) Recording image: if isRecording => "On", else "Off"
   const recordingSrc = isRecording ? "Recording On.png" : "Recording Off.png";
 
   // ----------------------------------
   //   HANDLERS
   // ----------------------------------
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    if (audioRef.current) {
-      audioRef.current.volume = newVolume;
-    }
-  };
-
   const togglePlayPause = async () => {
     try {
-      if (!audioRef.current) return;
+      if (!audioRef.current || !audioCtxRef.current) return;
 
       if (isPlaying) {
+        // Pause
         audioRef.current.pause();
         setStatus("Playback paused");
         setIsPlaying(false);
         setIsLive(false);
       } else {
+        // Set the stream URL and ensure audio element reloads
         audioRef.current.src = streamUrls[0];
+        audioRef.current.load();
+
+        // IMPORTANT: Resume AudioContext (in case it’s suspended)
+        await audioCtxRef.current.resume();
+
+        // Now try playing
         await audioRef.current.play();
+        audioRef.current.volume = volume;
+        
         setStatus("Playing stream");
         setIsPlaying(true);
         setIsLive(true);
@@ -187,7 +240,7 @@ const Player = () => {
     }
   };
 
-  // Start or stop recording
+  // Start/stop recording
   const toggleRecording = () => {
     if (!mediaRecorderRef.current) {
       setStatus("Recording system not ready.");
@@ -195,13 +248,12 @@ const Player = () => {
     }
 
     if (isRecording) {
-      // Stop current recording
+      // Stop existing recording
       mediaRecorderRef.current.stop();
       clearTimeout(recordingTimeoutRef.current);
       setIsRecording(false);
       setStatus("Recording stopped.");
 
-      // Process the recorded chunks after a brief delay
       setTimeout(() => {
         if (recordedChunks.length > 0) {
           const webmBlob = new Blob(recordedChunks, {
@@ -214,17 +266,15 @@ const Player = () => {
     } else {
       // Start a new recording
       setRecordedChunks([]);
-      mediaRecorderRef.current.start(1000);
+      mediaRecorderRef.current.start(1000); // timeslice=1000ms
       setIsRecording(true);
       setStatus("Recording...");
 
-      // Automatically stop after recordingDuration seconds
       recordingTimeoutRef.current = setTimeout(() => {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
         setStatus("Recording stopped after time limit.");
 
-        // Process the recorded chunks after a brief delay
         setTimeout(() => {
           if (recordedChunks.length > 0) {
             const webmBlob = new Blob(recordedChunks, {
@@ -239,7 +289,7 @@ const Player = () => {
   };
 
   // ----------------------------------
-  // CONVERSION LOGIC (WEBM -> MP3)
+  //   CONVERSION (WEBM -> MP3)
   // ----------------------------------
   const processRecording = async (webmBlob) => {
     setIsConverting(true);
@@ -248,29 +298,15 @@ const Player = () => {
     try {
       const arrayBuffer = await webmBlob.arrayBuffer();
       const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+
+      // Convert to MP3 (requires lamejs)
       const mp3Blob = await convertToMp3(audioBuffer);
-
-      const url = URL.createObjectURL(mp3Blob);
-      const a = document.createElement("a");
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      a.href = url;
-      a.download = `recording_${timestamp}.mp3`;
-      a.click();
-      URL.revokeObjectURL(url);
-
+      downloadBlob(mp3Blob, "mp3");
       setStatus("Recording downloaded as MP3.");
     } catch (error) {
       console.error("Conversion error:", error);
-      setStatus("Error converting to MP3. Downloading original format.");
-
-      // Download the original WEBM if MP3 conversion fails
-      const url = URL.createObjectURL(webmBlob);
-      const a = document.createElement("a");
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      a.href = url;
-      a.download = `recording_${timestamp}.webm`;
-      a.click();
-      URL.revokeObjectURL(url);
+      setStatus("Error converting to MP3. Downloading original WEBM.");
+      downloadBlob(webmBlob, "webm");
     } finally {
       setIsConverting(false);
     }
@@ -281,17 +317,21 @@ const Player = () => {
       throw new Error("lamejs not loaded");
     }
 
-    const channelData = audioBuffer.getChannelData(0);
-    const mp3Encoder = new window.lamejs.Mp3Encoder(1, audioBuffer.sampleRate, 128);
+    const channelData = audioBuffer.getChannelData(0); // mono
+    const sampleRate = audioBuffer.sampleRate;
+
+    const mp3Encoder = new window.lamejs.Mp3Encoder(1, sampleRate, 128);
     const sampleBlockSize = 1152;
     const mp3Data = [];
 
-    for (let i = 0; i < channelData.length; i += sampleBlockSize) {
+    let i = 0;
+    while (i < channelData.length) {
       const sampleChunk = channelData.subarray(i, i + sampleBlockSize);
-      const mp3buf = mp3Encoder.encodeBuffer(convertFloat32ToInt16(sampleChunk));
+      const mp3buf = mp3Encoder.encodeBuffer(float32ToInt16(sampleChunk));
       if (mp3buf.length > 0) {
         mp3Data.push(mp3buf);
       }
+      i += sampleBlockSize;
     }
 
     const end = mp3Encoder.flush();
@@ -302,8 +342,7 @@ const Player = () => {
     return new Blob(mp3Data, { type: "audio/mp3" });
   };
 
-  // Helper to convert from Float32 to Int16
-  const convertFloat32ToInt16 = (float32Array) => {
+  const float32ToInt16 = (float32Array) => {
     const int16Array = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
       const s = Math.max(-1, Math.min(1, float32Array[i]));
@@ -312,12 +351,21 @@ const Player = () => {
     return int16Array;
   };
 
+  const downloadBlob = (blob, extension) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `recording_${timestamp}.${extension}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ----------------------------------
   //         RENDER
   // ----------------------------------
   return (
     <div className="bg-[#1a2b47] w-full min-h-screen flex flex-col items-center justify-between py-6 px-4">
-      {/* Inline CSS for flip animation */}
       <style jsx>{`
         .flip-animation {
           animation: flip 0.3s forwards;
@@ -342,7 +390,6 @@ const Player = () => {
           alt="Station Logo"
           className="w-32 h-32 object-contain mb-4"
         />
-
         <div className="text-center mb-6">
           <p className="text-xl text-white mb-1">يتم الآن عرض برنامج</p>
           <p className="text-lg text-[#C4A661]">من حدائق الايمان</p>
@@ -375,24 +422,18 @@ const Player = () => {
           </button>
         </div>
 
-        {/* Volume / Recording Duration */}
-        <div className="flex flex-col items-center mt-8 space-y-4">
-          {/* Volume Slider */}
-          <div className="flex items-center space-x-2">
-            <label htmlFor="volume" className="text-sm text-white/70">
-              Volume
-            </label>
-            <input
-              id="volume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={handleVolumeChange}
-              className="w-40"
-            />
-          </div>
+        {/* Volume Slider & Recording Duration */}
+        <div className="flex flex-col items-center mt-8 space-y-6 w-full">
+          <VolumeSlider
+            volume={Math.round(volume * 100)}
+            onVolumeChange={(newVolume) => {
+              const normalized = newVolume / 100;
+              setVolume(normalized);
+              if (audioRef.current) {
+                audioRef.current.volume = normalized;
+              }
+            }}
+          />
 
           {/* Recording Duration Input */}
           <div className="flex items-center space-x-2">
@@ -415,7 +456,7 @@ const Player = () => {
       {/* Indicators & Status Messages */}
       <div className="w-full max-w-xl mx-auto flex flex-col items-center mt-6">
         <div className="flex items-center space-x-8 mb-4">
-          {/* Recording Indicator (slightly larger icon & extra space) */}
+          {/* Recording Indicator */}
           <div className="flex items-center space-x-3">
             <img
               src={recordingSrc}
@@ -425,13 +466,9 @@ const Player = () => {
             <span className="text-sm text-white/70">REC</span>
           </div>
 
-          {/* Streaming Indicator (blinking; enlarged icon & extra space) */}
+          {/* Streaming Indicator */}
           <div className="flex items-center space-x-3">
-            <img
-              src={streamingSrc}
-              alt="Live"
-              className="w-6 h-6"
-            />
+            <img src={streamingSrc} alt="Live" className="w-6 h-6" />
             <span className="text-sm text-white/70">LIVE</span>
           </div>
         </div>
@@ -447,6 +484,8 @@ const Player = () => {
         ref={audioRef}
         preload="auto"
         crossOrigin="anonymous"
+        // Some browsers benefit from specifying the type:
+        type="audio/mpeg"
         className="hidden"
       />
     </div>

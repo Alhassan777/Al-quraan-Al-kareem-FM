@@ -48,7 +48,7 @@ label {
 
 /* Header */
 header {
-  @apply bg-white shadow-md fixed w-full z-50 px-4 py-3 flex items-center justify-between;
+  @apply bg-white shadow-md px-4 py-3 w-full z-50 flex items-center justify-between;
 }
 
 header .logo {
@@ -81,7 +81,7 @@ footer a {
   @apply text-gray-600;
 }
 
-/* Player */
+/* Player Component */
 .player {
   @apply flex flex-col items-center justify-center bg-white shadow-md rounded-lg p-6 space-y-4;
 }
@@ -90,9 +90,9 @@ footer a {
   @apply flex items-center justify-center space-x-6;
 }
 
-/* Schedule */
+/* Schedule Component */
 .schedule {
-  @apply bg-gray-100 shadow rounded-lg p-6;
+  @apply bg-gray-100 shadow-md rounded-lg p-6 space-y-4;
 }
 
 .schedule .program {
@@ -118,15 +118,15 @@ footer a {
   gap: 1.5rem; /* Equivalent to Tailwind's gap-6 */
 }
 
-/* Define only static parts of grid styles */
 .grid-cols-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr)); /* Equivalent to Tailwind's grid-cols-2 */
+  grid-template-columns: repeat(2, minmax(0, 1fr)); /* Replace @apply grid-cols-2 */
 }
 
 .grid-cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr)); /* Equivalent to Tailwind's grid-cols-3 */
+  grid-template-columns: repeat(3, minmax(0, 1fr)); /* Replace @apply grid-cols-3 */
 }
 
+/* Custom Filters */
 .filter-red {
   filter: invert(15%) sepia(95%) saturate(6932%) hue-rotate(358deg) brightness(95%) contrast(112%);
 }
@@ -135,6 +135,7 @@ footer a {
   filter: invert(47%) sepia(0%) saturate(0%) hue-rotate(153deg) brightness(91%) contrast(92%);
 }
 
+/* Additional Utilities */
 .schedule {
   padding: 20px;
   font-family: Arial, sans-serif;
@@ -147,4 +148,9 @@ footer a {
   border: 1px solid #ddd;
   border-radius: 5px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Debugging Utility - Remove in Production */
+.debug-border {
+  outline: 1px solid red !important;
 }
