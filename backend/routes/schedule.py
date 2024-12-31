@@ -162,17 +162,20 @@ def store_processed_data(processed_data):
 @schedule_bp.route("/all", methods=["GET"])
 def get_all_schedules():
     """
-    Returns all schedule entries in JSON format.
-    Supports pagination for large datasets.
+    Fetches all schedule entries from the database in JSON format.
+    Entries are sorted by time (00:00 to 23:59) and paginated for large datasets.
     """
     try:
+        # Get pagination parameters from query arguments
         page = request.args.get("page", 1, type=int)
         per_page = request.args.get("per_page", 20, type=int)
 
-        pagination = DailySchedule.query.paginate(
+        # Query database and sort entries by time in ascending order
+        pagination = DailySchedule.query.order_by(DailySchedule.time.asc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
+        # Format the queried data for JSON response
         data = [
             {
                 "id": entry.id,
@@ -184,6 +187,7 @@ def get_all_schedules():
             for entry in pagination.items
         ]
 
+        # Return JSON response with paginated results
         return jsonify({
             "data": data,
             "total": pagination.total,
@@ -192,8 +196,10 @@ def get_all_schedules():
         }), 200
 
     except Exception as e:
+        # Log the error and return a failure response
         logger.error(f"Error fetching schedule entries: {e}", exc_info=True)
         return jsonify({"error": "Failed to fetch schedules"}), 500
+
 
 
 @schedule_bp.route("/process", methods=["POST"])
