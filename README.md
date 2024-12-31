@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Al-Qur'an Al-Kareem FM 🎧📖
 
-## Getting Started
+**Al-Qur'an Al-Kareem FM** is a comprehensive web-based platform that enhances access to Qur'anic recitations and programs. Users can listen to live broadcasts of the **إذاعة القرآن الكريم من القاهرة**, view the updated daily schedule, and enjoy additional features like scheduled recordings and MP3 downloads.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🌟 Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Live Broadcast**: 
+   - Stream **إذاعة القرآن الكريم** directly over the internet using a Node.js server.
+   - Listen from any device, anywhere in the world.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+2. **Daily Updated Schedule**:
+   - Automatically fetches the daily broadcast schedule.
+   - Real-time updates displayed on the frontend.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. **Recording Functionality**:
+   - **Manual Recording**: Record any part of the live broadcast manually.
+   - **Timed Recording**: Schedule recordings for specific programs or time slots.
 
-## Learn More
+4. **MP3 Downloads**:
+   - Download recorded audio segments in MP3 format for offline listening.
 
-To learn more about Next.js, take a look at the following resources:
+5. **Searchable Reciter Playlists**:
+   - Search for Qur'anic recitations from renowned reciters.
+   - Filter playlists by reciter names for easy access.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+6. **Real-Time Updates with Telegram**:
+   - A Telegram listener fetches updates from **إذاعة القرآن الكريم** for dynamic scheduling and stream metadata.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+7. **User-Friendly Interface**:
+   - Fully responsive design in Arabic for seamless interaction on any device.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🛠️ Technologies Used
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Frontend**: React.js, Tailwind CSS
+- **Backend**: Flask, Flask-SocketIO, SQLAlchemy
+- **Database**: SQLite (dynamic and static databases)
+- **WebSockets**: Real-time communication using Socket.IO
+- **Node.js**: Streaming server (`server.mjs`)
+- **Telegram Listener**: Automated updates for schedule and metadata
+- **Deployment**: Designed for deployment on local machines or servers
+
+---
+
+## 🚀 Getting Started
+
+Follow these steps to set up the project on your local machine.
+
+### Prerequisites
+
+1. **Python**: Make sure Python 3.8+ is installed.
+2. **Node.js and npm**: Required for running the Node.js streaming server and React frontend.
+3. **Git**: Ensure Git is installed to clone the repository.
+4. **FFmpeg**: Required for audio streaming. Install it via:
+   - **MacOS**: `brew install ffmpeg`
+   - **Linux**: `sudo apt install ffmpeg`
+   - **Windows**: Download and install from [FFmpeg.org](https://ffmpeg.org).
+
