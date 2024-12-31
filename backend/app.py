@@ -1,74 +1,157 @@
 import os
 import logging
-from flask import Flask, jsonify, request
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, jsonify
+from dotenv import load_dotenv
 from flask_cors import CORS
+from flask_socketio import SocketIO
+from flask_migrate import Migrate
 
-# Flask app configuration
-app = Flask(__name__)
-CORS(app)
+# Import Blueprints
+from routes.schedule import schedule_bp
+from routes.playlists import playlist_bp
 
-# Database path
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.path.join(BASE_DIR, "convert_excel_to_db", "sheikh_playlist.db")
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Import Database
+from database import db
 
-# Initialize the database
-db = SQLAlchemy(app)
+########################################################
+# 1. Load Environment Variables
+########################################################
+load_dotenv()
 
+API_ID = os.getenv("API_ID")
+API_HASH = os.getenv("API_HASH")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+SERVER_URL = os.getenv("SERVER_URL")
 
-# Database Model
-class SheikhPlaylist(db.Model):
-    __tablename__ = 'sheikh_playlist'
+# Validate Environment Variables
+missing_vars = [var for var in ["API_ID", "API_HASH", "CHANNEL_USERNAME", "SERVER_URL"] if not os.getenv(var)]
+if missing_vars:
+    raise ValueError(f"Missing environment variables: {', '.join(missing_vars)}")
 
-    id = db.Column(db.Integer, primary_key=True)
-    reciter = db.Column(db.String(255), nullable=False)
-    link = db.Column(db.String(255), nullable=False)
+########################################################
+# 2. Configure Logging
+########################################################
+logging.basicConfig(
+    level=logging.INFO,  # Set to DEBUG for more verbose output
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
+########################################################
+# 3. Database Path Setup
+########################################################
+def setup_database_paths():
+    """Set up database paths and ensure directories exist."""
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    dynamic_db_dir = os.path.join(base_dir, "db")
+    static_db_dir = os.path.join(base_dir, "convert_excel_to_db")
 
-@app.route('/api/playlists/', methods=['GET'])
-def get_playlists():
-    """
-    Endpoint to fetch playlists from the database, optionally filtering by reciter name.
-    """
+    dynamic_db_path = os.path.join(dynamic_db_dir, "dynamic_schedule.db")
+    static_db_path = os.path.join(static_db_dir, "sheikh_playlist.db")
+
+    # Ensure directories exist
+    for db_dir in [dynamic_db_dir, static_db_dir]:
+        if not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+            logger.info(f"Created directory for database: {db_dir}")
+
+    return dynamic_db_path, static_db_path
+
+########################################################
+# 4. Flask App Setup
+########################################################
+def create_app():
+    """Create and configure the Flask application."""
+    app = Flask(__name__)
+
+    # Enable CORS for all routes and Socket.IO
+    CORS(app, resources={r"/*": {"origins": "*"}})  # Adjust origins for production
+
+    # Set up database paths
+    dynamic_db_path, static_db_path = setup_database_paths()
+
+    # Configure SQLAlchemy with multiple binds
+    app.config["SQLALCHEMY_BINDS"] = {
+        "dynamic": f"sqlite:///{dynamic_db_path}",
+        "static": f"sqlite:///{static_db_path}",
+    }
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # Initialize extensions
+    db.init_app(app)
+    migrate = Migrate(app, db)  # Optional: Use Flask-Migrate for database migrations
+
+    # Initialize SocketIO
+    socketio = SocketIO(app, cors_allowed_origins="*")  # Adjust origins for production
+    app.config['SOCKETIO'] = socketio  # Store SocketIO instance in app config
+
+    # Register Blueprints
+    app.register_blueprint(schedule_bp, url_prefix="/api/schedule")
+    app.register_blueprint(playlist_bp, url_prefix="/api/playlists")
+
+    # Register Root Route
+    @app.route("/")
+    def index():
+        return jsonify({"message": "Welcome to the Quran FM API!"}), 200
+
+    return app
+
+########################################################
+# 5. Database Initialization
+########################################################
+def initialize_databases(app):
+    """Initialize all database tables."""
+    with app.app_context():
+        try:
+            # Create tables for each bind
+            db.create_all(bind_key="dynamic")
+            db.create_all(bind_key="static")
+            logger.info("Successfully initialized all database tables")
+        except Exception as e:
+            logger.error(f"Failed to initialize databases: {str(e)}")
+            raise
+
+########################################################
+# 6. Main Function
+########################################################
+def main():
+    """Main application entry point."""
     try:
-        # Get the search query from the request args
-        query = request.args.get('q', '').strip()
-        
-        if query:
-            # Filter playlists by reciter name (case-insensitive search)
-            playlists = SheikhPlaylist.query.filter(
-                SheikhPlaylist.reciter.ilike(f"%{query}%")
-            ).all()
-        else:
-            # Fetch all playlists if no query is provided
-            playlists = SheikhPlaylist.query.all()
+        # Create and configure the application
+        app = create_app()
 
-        # Transform data into JSON serializable format
-        result = [
-            {"id": playlist.id, "reciter": playlist.reciter, "link": playlist.link}
-            for playlist in playlists
-        ]
-        logging.info(f"Successfully fetched {len(result)} playlists.")
-        return jsonify(result), 200
+        # Initialize databases
+        initialize_databases(app)
+
+        # Retrieve SocketIO instance from app config
+        socketio = app.config.get('SOCKETIO')
+        if not socketio:
+            logger.error("SocketIO instance not found in app config.")
+            raise Exception("SocketIO not initialized.")
+
+        # Start the Flask server with SocketIO support
+        logger.info("Starting Flask server with SocketIO...")
+        socketio.run(
+            app,
+            debug=True,  # Disable in production
+            host="0.0.0.0",  # Accessible externally; change to "127.0.0.1" if not needed
+            port=5000,
+            allow_unsafe_werkzeug=True,  # Remove or set to False in production
+            use_reloader=False  # Disable reloader if using SocketIO
+        )
     except Exception as e:
-        logging.error(f"Error while fetching playlists: {e}")
-        return jsonify({"error": "Failed to fetch playlists"}), 500
+        logger.error(f"Application failed to start: {str(e)}")
+        raise
 
-
-@app.route('/')
-def index():
-    """
-    Root endpoint for testing API availability.
-    """
-    return jsonify({"message": "Welcome to the Sheikh Playlist API!"}), 200
-
-
+########################################################
+# 7. Entry Point
+########################################################
 if __name__ == "__main__":
-    # Log database path for debugging
-    logging.basicConfig(level=logging.INFO)
-    logging.info(f"Database path: {DB_PATH}")
-
-    # Start the Flask server
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    try:
+        main()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutting down gracefully...")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise
