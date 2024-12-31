@@ -145,10 +145,14 @@ def store_processed_data(processed_data):
     # Emit a WebSocket event to notify frontend of the new schedule
     socketio = current_app.config.get('SOCKETIO')
     if socketio:
-        socketio.emit('new_schedule', {
-            "schedule_date": schedule_date.strftime("%Y-%m-%d"),
-            "final_schedule": final_schedule
-        }, broadcast=True)
+        socketio.emit(
+                    'new_schedule',
+                    {
+                        "schedule_date": schedule_date.strftime("%Y-%m-%d"),
+                        "final_schedule": final_schedule
+                    },
+                    namespace='/'
+                )
         logger.info(f"Emitted 'new_schedule' event for date: {schedule_date}")
     else:
         logger.error("SocketIO instance not found. Cannot emit 'new_schedule' event.")
