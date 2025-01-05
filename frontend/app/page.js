@@ -1,9 +1,11 @@
 "use client";
 
+import React, { useState } from 'react';
 import Header from './components/Header.jsx';
 import Player from './components/Player.jsx';
 import Status from './components/Status.jsx';
-import { useState } from 'react';
+import TimezoneDetector from './components/TimezoneDetector.jsx';
+
 import '../style/global.css';
 
 export default function Home() {
@@ -17,9 +19,13 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#0A1828] text-[#C4A661] flex flex-col items-center">
+      
+      {/* Timezone Detection */}
+      <TimezoneDetector />
+
       {/* Header Component */}
       <Header
-        subtitle=" إذاعة القرآن الكريم من القاهرة"
+        subtitle="إذاعة القرآن الكريم من القاهرة"
       />
 
       {/* Main Content */}
@@ -32,6 +38,8 @@ export default function Home() {
           streamUrl="https://n10.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABk-06_7wAAb2D9o5zdb4y4A"
           setStatusMessage={setStatusMessage}
           setStatusType={setStatusType}
+          volume={volume}
+          onVolumeChange={handleVolumeChange}
         />
       </main>
     </div>

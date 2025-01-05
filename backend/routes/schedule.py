@@ -1,5 +1,3 @@
-# routes/schedule.py
-
 import re
 import logging
 from datetime import datetime, timedelta
@@ -14,6 +12,8 @@ from schedule_parsing.parse_logic import (
     parse_quran_schedule,
     clean_and_merge,
 )
+
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ def process_raw_text(raw_text):
     logger.info("Completed processing of raw text.")
     return processed_data
 
+
 def store_processed_data(processed_data):
     """
     Stores the processed schedule data into the database.
@@ -146,16 +147,17 @@ def store_processed_data(processed_data):
     socketio = current_app.config.get('SOCKETIO')
     if socketio:
         socketio.emit(
-                    'new_schedule',
-                    {
-                        "schedule_date": schedule_date.strftime("%Y-%m-%d"),
-                        "final_schedule": final_schedule
-                    },
-                    namespace='/'
-                )
+            'new_schedule',
+            {
+                "schedule_date": schedule_date.strftime("%Y-%m-%d"),
+                "final_schedule": final_schedule
+            },
+            namespace='/'
+        )
         logger.info(f"Emitted 'new_schedule' event for date: {schedule_date}")
     else:
         logger.error("SocketIO instance not found. Cannot emit 'new_schedule' event.")
+
 
 # ------------------------ Route Definitions ------------------------
 
@@ -164,42 +166,66 @@ def get_all_schedules():
     """
     Fetches all schedule entries from the database in JSON format.
     Entries are sorted by time (00:00 to 23:59) and paginated for large datasets.
+    Times are converted to the user's timezone based on the 'user_timezone' cookie.
     """
     try:
-        # Get pagination parameters from query arguments
+        # Get user's timezone from cookie
+        user_timezone_str = request.cookies.get('user_timezone', 'Africa/Cairo')
+        logger.debug(f"user_timezone_str from cookie: {user_timezone_str}")
+        logger.info(f"Detected user timezone: {user_timezone_str}")
+
+        # Fallback if user_timezone_str not recognized by zoneinfo
+        try:
+            user_timezone = ZoneInfo(user_timezone_str)
+        except ZoneInfoNotFoundError:
+            logger.warning(f"Invalid or missing timezone '{user_timezone_str}'. Defaulting to Cairo's timezone.")
+            user_timezone = ZoneInfo("Africa/Cairo")
+
+        cairo_timezone = ZoneInfo("Africa/Cairo")
+
+        # Pagination parameters
         page = request.args.get("page", 1, type=int)
         per_page = request.args.get("per_page", 20, type=int)
 
-        # Query database and sort entries by time in ascending order
+        # Query with pagination and sort by time ascending
         pagination = DailySchedule.query.order_by(DailySchedule.time.asc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
-        # Format the queried data for JSON response
-        data = [
-            {
+        data = []
+        for entry in pagination.items:
+            # Parse the time string into a datetime object in Cairo's timezone
+            try:
+                cairo_time = datetime.strptime(entry.time, "%I:%M %p").time()
+                cairo_datetime = datetime.combine(entry.schedule_date, cairo_time, tzinfo=cairo_timezone)
+            except ValueError as ve:
+                logger.error(f"Time parsing error for entry ID {entry.id}: {ve}")
+                # Skip this entry or handle as needed
+                continue
+
+            # Convert to user's timezone
+            user_datetime = cairo_datetime.astimezone(user_timezone)
+            converted_time = user_datetime.strftime("%I:%M %p")
+
+            data.append({
                 "id": entry.id,
-                "schedule_date": entry.schedule_date.strftime("%Y-%m-%d"),
-                "time": entry.time,
+                "schedule_date": user_datetime.strftime("%Y-%m-%d"),
+                "time": converted_time,
                 "reciter": entry.reciter,
                 "surah": entry.surah,
-            }
-            for entry in pagination.items
-        ]
+            })
 
-        # Return JSON response with paginated results
         return jsonify({
             "data": data,
             "total": pagination.total,
             "pages": pagination.pages,
-            "current_page": pagination.page,
+            "current_page": pagination.page
         }), 200
 
     except Exception as e:
         # Log the error and return a failure response
         logger.error(f"Error fetching schedule entries: {e}", exc_info=True)
         return jsonify({"error": "Failed to fetch schedules"}), 500
-
 
 
 @schedule_bp.route("/process", methods=["POST"])
@@ -273,7 +299,12 @@ def store_schedule():
                 store_processed_data(processed_data)
             except ValueError as ve:
                 logger.error(f"Storage error: {ve}")
+                db.session.rollback()  # Rollback in case of storage error
                 return jsonify({"error": str(ve)}), 400
+            except Exception as e:
+                logger.error(f"Unexpected storage error: {e}", exc_info=True)
+                db.session.rollback()  # Rollback for any unexpected errors
+                return jsonify({"error": "Failed to store schedule."}), 500
 
             return jsonify({
                 "status": "success",
@@ -348,120 +379,161 @@ def store_schedule():
                 db.session.add(new_entry)
 
             # Commit the transaction
-            logger.info("All schedule entries added to DB session. Committing...")
-            db.session.commit()
-            logger.info(f"Schedule for {schedule_date} successfully stored in the database.")
+            try:
+                logger.info("All schedule entries added to DB session. Committing...")
+                db.session.commit()
+                logger.info(f"Schedule for {schedule_date} successfully stored in the database.")
+            except Exception as e:
+                logger.error(f"Database commit failed: {e}", exc_info=True)
+                db.session.rollback()
+                return jsonify({"error": "Failed to store schedule."}), 500
 
             # Emit a WebSocket event to notify frontend of the new schedule
-            socketio = current_app.config.get('SOCKETIO')
-            if socketio:
-                socketio.emit(
-                    'new_schedule',
-                    {
-                        "schedule_date": schedule_date.strftime("%Y-%m-%d"),
-                        "final_schedule": final_schedule
-                    },
-                    namespace='/'
-                )
-                logger.info(f"Emitted 'new_schedule' event for date: {schedule_date}")
-            else:
-                logger.error("SocketIO instance not found. Cannot emit 'new_schedule' event.")
+            try:
+                socketio = current_app.config.get('SOCKETIO')
+                if socketio:
+                    socketio.emit(
+                        'new_schedule',
+                        {
+                            "schedule_date": schedule_date.strftime("%Y-%m-%d"),
+                            "final_schedule": final_schedule
+                        },
+                        namespace='/'
+                    )
+                    logger.info(f"Emitted 'new_schedule' event for date: {schedule_date}")
+                else:
+                    logger.error("SocketIO instance not found. Cannot emit 'new_schedule' event.")
+            except Exception as e:
+                logger.error(f"Failed to emit 'new_schedule' event: {e}", exc_info=True)
 
             return jsonify({
                 "status": "success",
                 "message": f"Schedule for {schedule_date} stored successfully."
             }), 200
 
+    except ValueError as ve:
+        logger.error(f"Validation error: {ve}")
+        db.session.rollback()  # Rollback in case of validation error
+        return jsonify({"error": str(ve)}), 400
+
     except Exception as e:
-        logger.error(f"Unexpected error in store_schedule: {e}", exc_info=True)
+        logger.error(f"Error storing schedule: {e}", exc_info=True)
+        db.session.rollback()  # Rollback for any unexpected errors
         return jsonify({"error": "Failed to store schedule."}), 500
 
-    @schedule_bp.route("/process_and_store", methods=["POST"])
-    def process_and_store_schedule():
-        """
-        Combined endpoint to process raw schedule text and store it in the database.
-        Expects JSON payload: { "raw_text": "schedule text" }.
-        Returns confirmation of successful storage.
-        """
+
+@schedule_bp.route("/process_and_store", methods=["POST"])
+def process_and_store_schedule():
+    """
+    Combined endpoint to process raw schedule text and store it in the database.
+    Expects JSON payload: { "raw_text": "schedule text" }.
+    Returns confirmation of successful storage.
+    """
+    try:
+        data = request.get_json()
+        if not data or "raw_text" not in data:
+            logger.warning("No raw_text provided in the request.")
+            return jsonify({"error": "No raw_text provided"}), 400
+
+        raw_text = data["raw_text"].strip()
+        logger.info(f"Received raw text for processing and storing (length={len(raw_text)}).")
+
+        # Process the raw text
         try:
-            data = request.get_json()
-            if not data or "raw_text" not in data:
-                logger.warning("No raw_text provided in the request.")
-                return jsonify({"error": "No raw_text provided"}), 400
+            processed_data = process_raw_text(raw_text)
+        except ValueError as ve:
+            logger.error(f"Processing error: {ve}")
+            return jsonify({"error": str(ve)}), 400
 
-            raw_text = data["raw_text"].strip()
-            logger.info(f"Received raw text for processing and storing (length={len(raw_text)}).")
-
-            # Process the raw text
-            try:
-                processed_data = process_raw_text(raw_text)
-            except ValueError as ve:
-                logger.error(f"Processing error: {ve}")
-                return jsonify({"error": str(ve)}), 400
-
-            # Store the processed data
-            try:
-                store_processed_data(processed_data)
-            except ValueError as ve:
-                logger.error(f"Storage error: {ve}")
-                return jsonify({"error": str(ve)}), 400
-
-            return jsonify({"status": "success", "message": f"Schedule for {processed_data['schedule_date']} stored successfully."}), 200
-
-        except Exception as e:
-            logger.error(f"Error in process_and_store_schedule: {e}", exc_info=True)
-            return jsonify({"error": "Failed to process and store schedule"}), 500
-
-
-    @schedule_bp.route("/debug/raw_and_parsed", methods=["GET"])
-    def debug_raw_and_parsed():
-        """
-        Debug endpoint to view the raw text, header info, parsed data,
-        and final schedule before inserting into DB.
-        Note: This endpoint's utility is reduced due to the separation of processing and storing.
-        It can be modified or removed based on your debugging needs.
-        """
-        return jsonify({
-            "message": "This endpoint has limited utility after separating processing and storing.",
-            "instruction": "Use the /process or /process_and_store endpoints."
-        }), 200
-
-
-    @schedule_bp.route("/clear_old", methods=["DELETE"])
-    def clear_old_schedules():
-        """
-        Deletes old schedules older than a given threshold (default: 30 days).
-        """
+        # Store the processed data
         try:
-            threshold_days = int(request.args.get("threshold", 30))  # default 30
-            cutoff_date = datetime.utcnow().date() - timedelta(days=threshold_days)
-
-            # Fetch old schedules + metadata
-            old_schedules = DailySchedule.query.filter(
-                DailySchedule.schedule_date < cutoff_date
-            ).all()
-            old_metadata = DailyTableMetadata.query.filter(
-                DailyTableMetadata.schedule_date < cutoff_date
-            ).all()
-
-            if old_schedules or old_metadata:
-                # Delete them
-                for schedule in old_schedules:
-                    db.session.delete(schedule)
-                for metadata in old_metadata:
-                    db.session.delete(metadata)
-
-                db.session.commit()
-                logger.info(f"Old schedules older than {cutoff_date} cleared from DB.")
-                return jsonify({
-                    "status": "success",
-                    "message": f"Schedules older than {cutoff_date} deleted."
-                }), 200
-
-            logger.info("No old schedules found for deletion.")
-            return jsonify({"status": "success", "message": "No old schedules to delete."}), 200
-
+            store_processed_data(processed_data)
+        except ValueError as ve:
+            logger.error(f"Storage error: {ve}")
+            db.session.rollback()  # Rollback in case of storage error
+            return jsonify({"error": str(ve)}), 400
         except Exception as e:
-            logger.error(f"Error clearing old schedules: {e}", exc_info=True)
-            db.session.rollback()
-            return jsonify({"error": "Failed to clear old schedules."}), 500
+            logger.error(f"Unexpected storage error: {e}", exc_info=True)
+            db.session.rollback()  # Rollback for any unexpected errors
+            return jsonify({"error": "Failed to store schedule."}), 500
+
+        return jsonify({"status": "success", "message": f"Schedule for {processed_data['schedule_date']} stored successfully."}), 200
+
+    except Exception as e:
+        logger.error(f"Error in process_and_store_schedule: {e}", exc_info=True)
+        db.session.rollback()  # Rollback in case of any unexpected errors
+        return jsonify({"error": "Failed to process and store schedule"}), 500
+
+
+@schedule_bp.route("/debug/raw_and_parsed", methods=["GET"])
+def debug_raw_and_parsed():
+    """
+    Debug endpoint to view the raw text, header info, parsed data,
+    and final schedule before inserting into DB.
+    Note: This endpoint's utility is reduced due to the separation of processing and storing.
+    It can be modified or removed based on your debugging needs.
+    """
+    return jsonify({
+        "message": "This endpoint has limited utility after separating processing and storing.",
+        "instruction": "Use the /process or /process_and_store endpoints."
+    }), 200
+
+
+@schedule_bp.route("/clear_old", methods=["DELETE"])
+def clear_old_schedules():
+    """
+    Deletes old schedules older than a given threshold (default: 30 days).
+    """
+    try:
+        threshold_days = int(request.args.get("threshold", 30))  # default 30
+        cutoff_date = datetime.utcnow().date() - timedelta(days=threshold_days)
+
+        # Fetch old schedules + metadata
+        old_schedules = DailySchedule.query.filter(
+            DailySchedule.schedule_date < cutoff_date
+        ).all()
+        old_metadata = DailyTableMetadata.query.filter(
+            DailyTableMetadata.schedule_date < cutoff_date
+        ).all()
+
+        if old_schedules or old_metadata:
+            # Delete them
+            for schedule in old_schedules:
+                db.session.delete(schedule)
+            for metadata in old_metadata:
+                db.session.delete(metadata)
+
+            db.session.commit()
+            logger.info(f"Old schedules older than {cutoff_date} cleared from DB.")
+            return jsonify({
+                "status": "success",
+                "message": f"Schedules older than {cutoff_date} deleted."
+            }), 200
+
+        logger.info("No old schedules found for deletion.")
+        return jsonify({"status": "success", "message": "No old schedules to delete."}), 200
+
+    except Exception as e:
+        logger.error(f"Error clearing old schedules: {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify({"error": "Failed to clear old schedules."}), 500
+
+@schedule_bp.route("/debug/timezone", methods=["GET"])
+def debug_timezone():
+    """
+    Debug endpoint to validate timezone conversions.
+    """
+    user_timezone_str = request.cookies.get('user_timezone', 'Africa/Cairo')
+    try:
+        user_timezone = ZoneInfo(user_timezone_str)
+    except ZoneInfoNotFoundError:
+        user_timezone = ZoneInfo("Africa/Cairo")
+
+    now_utc = datetime.utcnow()
+    now_user = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(user_timezone)
+
+    return jsonify({
+        "utc_time": now_utc.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "user_time": now_user.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "user_timezone": user_timezone_str
+    }), 200

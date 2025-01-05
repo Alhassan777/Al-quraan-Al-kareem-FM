@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { FaYoutube } from "react-icons/fa";
 import io from "socket.io-client"; // Import Socket.IO client
+import Cookies from 'js-cookie'; // Import js-cookie for cookie handling
+import TimezoneDetector from './TimezoneDetector.jsx'; // Ensure this is included
 
 export default function Schedule() {
   const [activeTab, setActiveTab] = useState("sheikhs"); // "sheikhs" or "programs"
@@ -14,7 +16,7 @@ export default function Schedule() {
   const [errorPrograms, setErrorPrograms] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [socket, setSocket] = useState(null);
-  const [scheduleDate, setScheduleDate] = useState(null); // New state for the schedule date
+  const [scheduleDate, setScheduleDate] = useState(null); // State for the schedule date
 
   useEffect(() => {
     fetchSheikhPrograms();
@@ -23,6 +25,7 @@ export default function Schedule() {
     // Initialize Socket.IO client with WebSocket transport
     const newSocket = io("http://127.0.0.1:5000", {
       transports: ["websocket"], // Force WebSocket transport
+      withCredentials: true, // Ensure cookies are sent with the connection
     });
     setSocket(newSocket);
 
@@ -47,9 +50,12 @@ export default function Schedule() {
       setLoadingSheikhs(true);
       setErrorSheikhs(null);
       const url = search
-        ? `http://127.0.0.1:5000/api/playlists/?q=${encodeURIComponent(search)}`
-        : "http://127.0.0.1:5000/api/playlists/";
-      const response = await fetch(url);
+        ? `/api/playlists/?q=${encodeURIComponent(search)}`
+        : "/api/playlists/";
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include', // Include cookies in the request
+      });
       if (!response.ok) throw new Error("Failed to fetch sheikh programs");
       const data = await response.json();
       setSheikhPrograms(data);
@@ -65,7 +71,10 @@ export default function Schedule() {
     try {
       setLoadingPrograms(true);
       setErrorPrograms(null);
-      const response = await fetch("http://127.0.0.1:5000/api/schedule/all");
+      const response = await fetch("http://127.0.0.1:5000/api/schedule/all", {
+        method: 'GET',
+        credentials: 'include', // Include cookies in the request
+      });
       if (!response.ok) throw new Error("Failed to fetch program schedule");
       const data = await response.json();
       setProgramSchedule(data.data);
@@ -84,6 +93,9 @@ export default function Schedule() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl" dir="rtl">
+      {/* Timezone Detector */}
+      <TimezoneDetector />
+
       <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="flex mb-6">
           <button

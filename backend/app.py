@@ -9,6 +9,7 @@ from flask_migrate import Migrate
 # Import Blueprints
 from routes.schedule import schedule_bp
 from routes.playlists import playlist_bp
+from routes.timezone import timezone_bp
 
 # Import Database
 from database import db
@@ -65,8 +66,12 @@ def create_app():
     """Create and configure the Flask application."""
     app = Flask(__name__)
 
-    # Enable CORS for all routes and Socket.IO
-    CORS(app, resources={r"/*": {"origins": "*"}})  # Adjust origins for production
+    # Enable CORS for all routes with credentials
+    CORS(
+        app,
+        resources={r"/*": {"origins": "http://localhost:3000"}},  # Adjust for your frontend's origin
+        supports_credentials=True,
+    )
 
     # Set up database paths
     dynamic_db_path, static_db_path = setup_database_paths()
@@ -83,12 +88,13 @@ def create_app():
     migrate = Migrate(app, db)  # Optional: Use Flask-Migrate for database migrations
 
     # Initialize SocketIO
-    socketio = SocketIO(app, cors_allowed_origins="*")  # Adjust origins for production
-    app.config['SOCKETIO'] = socketio  # Store SocketIO instance in app config
+    socketio = SocketIO(app, cors_allowed_origins="http://localhost:3000")  # Adjust for your frontend's origin
+    app.config["SOCKETIO"] = socketio  # Store SocketIO instance in app config
 
     # Register Blueprints
     app.register_blueprint(schedule_bp, url_prefix="/api/schedule")
     app.register_blueprint(playlist_bp, url_prefix="/api/playlists")
+    app.register_blueprint(timezone_bp, url_prefix="/api")
 
     # Register Root Route
     @app.route("/")
@@ -125,7 +131,7 @@ def main():
         initialize_databases(app)
 
         # Retrieve SocketIO instance from app config
-        socketio = app.config.get('SOCKETIO')
+        socketio = app.config.get("SOCKETIO")
         if not socketio:
             logger.error("SocketIO instance not found in app config.")
             raise Exception("SocketIO not initialized.")
@@ -138,7 +144,7 @@ def main():
             host="0.0.0.0",  # Accessible externally; change to "127.0.0.1" if not needed
             port=5000,
             allow_unsafe_werkzeug=True,  # Remove or set to False in production
-            use_reloader=False  # Disable reloader if using SocketIO
+            use_reloader=False,  # Disable reloader if using SocketIO
         )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}")
