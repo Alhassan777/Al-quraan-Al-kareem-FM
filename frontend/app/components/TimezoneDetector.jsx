@@ -11,7 +11,7 @@ const TimezoneDetector = () => {
 
             if (timezone !== storedTimezone) {
                 // Update the cookie (expires in 30 days)
-                Cookies.set('user_timezone', timezone, { expires: 30, secure: true, sameSite: 'Lax' });
+                Cookies.set('user_timezone', timezone, { expires: 30, secure: false, sameSite: 'Lax' }); //change secure for True in Production
 
                 console.log(`Timezone updated: ${timezone}`);
             }

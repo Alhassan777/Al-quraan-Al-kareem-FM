@@ -141,7 +141,6 @@ def main():
         socketio.run(
             app,
             debug=True,  # Disable in production
-            host="0.0.0.0",  # Accessible externally; change to "127.0.0.1" if not needed
             port=5000,
             allow_unsafe_werkzeug=True,  # Remove or set to False in production
             use_reloader=False,  # Disable reloader if using SocketIO

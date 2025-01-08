@@ -1,6 +1,6 @@
 import re
-import json
 from collections import defaultdict
+import json
 
 #############################
 # A) Bracket & Emoji Removal
@@ -19,7 +19,7 @@ def remove_brackets(text: str) -> str:
 
 def remove_emojis(text: str) -> str:
     """
-    Strip typical emojis / special Unicode symbols.
+    Removes emojis / special Unicode symbols.
     """
     emoji_pattern = re.compile(
         r'[\U0001F300-\U0001F5FF'
@@ -36,48 +36,60 @@ def remove_emojis(text: str) -> str:
 # B) Time Parsing
 #############################
 
-def fix_time_format_flex(time_str: str) -> str:
+def fix_time_format(time_str: str) -> str:
     """
-    Flexible time parser:
-      - "7ص" => "07:00"
-      - "7.5" => "07:05" (example)
-    Strips trailing Arabic letters, parentheses, etc.
+    Attempts to parse times like "06:00", "40 : 6 (ص)" => "06:40",
+    swapping if reversed, ignoring parentheses, etc.
+
+    NEW HEURISTIC:
+      If the parsed minute < 10, we flip hour/minute. e.g., "12:03" => "03:12".
+
+    Returns "" if invalid.
     """
-    time_str = re.sub(r'\([^)]*\)', '', time_str).strip()
+    # Check for (ص)/(م) => optional AM/PM usage
+    am_pm = ""
+    if re.search(r'\(.*?[ص]\)', time_str):
+        am_pm = "AM"
+    elif re.search(r'\(.*?[م]\)', time_str):
+        am_pm = "PM"
 
-    # e.g. "7ص" => "07:00"
-    m_single = re.match(r'^(\d{1,2})(\s*[صم]?)$', time_str, re.IGNORECASE)
-    if m_single:
-        hour = int(m_single.group(1))
-        if 0 <= hour <= 23:
-            return f"{hour:02d}:00"
-
-    # "7.5" => interpret as "07:05"
+    # Remove parentheses
+    time_str = re.sub(r'\(.*?\)', '', time_str).strip()
+    # unify punctuation
     time_str = time_str.replace('٫', '.').replace('،', '.')
-    m_point = re.match(r'^(\d{1,2})\.(\d{1,2})$', time_str)
-    if m_point:
-        hour = int(m_point.group(1))
-        mins = int(m_point.group(2))
-        if mins < 10:
-            mins = mins * 10
-        if mins >= 60:
-            mins = 59
-        return f"{hour:02d}:{mins:02d}"
+    # remove spaces around colons
+    time_str = re.sub(r'\s*:\s*', ':', time_str)
+    time_str = re.sub(r'\s+', ' ', time_str).strip()
 
-    # unify '.' => ':'
-    time_str = time_str.replace('.', ':')
-    # remove trailing letters
-    time_str = re.sub(r'([0-9:\s]+)[^\d:\s]+$', r'\1', time_str).strip()
-
-    match = re.match(r'(\d{1,2})\s*:\s*(\d{1,2})', time_str)
+    match = re.match(r'^(\d{1,2}):(\d{1,2})$', time_str)
     if not match:
         return ""
+
     hour = int(match.group(1))
     minute = int(match.group(2))
+
+    # If hour>23 & minute<=23 => swap
     if hour > 23 and minute <= 23:
         hour, minute = minute, hour
+
+    #######################################
+    # NEW HEURISTIC: if minute < 10 => flip
+    #######################################
+    if minute < 10:
+        hour, minute = minute, hour
+
+    # if still out-of-range => fail
     if hour > 23 or minute > 59:
         return ""
+
+    # Optionally handle AM/PM
+    if am_pm == "AM":
+        if hour == 12:
+            hour = 0
+    elif am_pm == "PM":
+        if hour < 12:
+            hour += 12
+
     return f"{hour:02d}:{minute:02d}"
 
 #############################
@@ -86,25 +98,35 @@ def fix_time_format_flex(time_str: str) -> str:
 
 def parse_reciter(line: str) -> str:
     """
-    Extract text after (للشيخ|للقارئ|قارئ).
-    Remove leftover 'ما تيسر', 'سورة...', durations, etc.
+    Extract reciter after "تلاوة للقارئ", "للشيخ", or "للقارئ".
+    Remove leftover phrases like durations, surah references, etc.
     """
     pattern = re.compile(
-        r'(?:للشيخ|للقارئ|قارئ)\s*/?\s*(.+?)(?=\s*(?:مدة\s+التلاوة|ما\s+تيسر|/|$))',
+        r'(?:تلاوة\s+للقارئ|للشيخ|للقارئ)\s*/?\s*([^\n]+?)'
+        r'(?=\s*(?:ما\s+تيسر|من\s+سورة|مدة\s+التلاوة|\d+\s*ق|$))',
         re.IGNORECASE
     )
     m = pattern.search(line)
     if not m:
         return ""
+
     reciter_text = m.group(1).strip()
 
-    # remove references to surahs or durations
-    reciter_text = re.sub(r'(?i)(ما\s+تيسر.*$|سورة\s+.*$|سورتى\s+.*$|\d+\s*ق.*$)', '', reciter_text).strip()
-
-    # Additional cleanup
-    reciter_text = re.split(r'(?:\d+\s*ق|سورة\s+)', reciter_text)[0]
-    reciter_text = reciter_text.replace('وماتيسرمن', '').strip()
+    # 2) Remove trailing references
+    reciter_text = re.sub(r'(?i)(سورة\s+.*$|سورتى\s+.*$)', '', reciter_text)
+    reciter_text = re.sub(r'\d+\s*ق.*$', '', reciter_text)
+    # e.g. "من فلان"
+    reciter_text = re.sub(r'^\s*من\s+', '', reciter_text, flags=re.IGNORECASE)
     reciter_text = reciter_text.strip('/').strip()
+
+    # Remove any slash and anything following it
+    reciter_text = re.sub(r'/.*', '', reciter_text)
+
+    # Remove any text after "ما تيسر" / "ما تيسر من" / "وماتيسر" / "وماتيسر من" (case-insensitive)
+    reciter_text = re.sub(r'(?i)(ما\s*تيسر(?:\s*من)?|وما\s*تيسر(?:\s*من)?).*', '', reciter_text)
+
+    # Normalize whitespace around the reciter name
+    reciter_text = re.sub(r'\s+', ' ', reciter_text).strip()
 
     return reciter_text
 
@@ -114,28 +136,24 @@ def parse_reciter(line: str) -> str:
 
 def parse_surahs(line: str) -> list:
     """
-    Return a list of surah references from:
-      'ما تيسر من سورتى X - Y', 'من سورة X', etc.
+    Captures e.g. "ما تيسر من سورتى X - Y",
+    splits on dash or " و " or slash.
     """
     pattern = re.compile(
-        r'(?:ما\s*تيسر\s*من|من\s+(?:سورة|سور|سورتى))\s+(.+?)(?=\s*(?:ومدة\s+التلاوة|مدة\s+التلاوة|\d+\s*ق|$))',
+        r'(?:ما\s+تيسر\s+من|من\s+(?:سورة|سور|سورتى))\s+(.+?)(?=\s*(?:ومدة\s+التلاوة|\d+\s*ق|$))',
         re.IGNORECASE
     )
     matches = pattern.findall(line)
     all_surahs = []
     for m in matches:
-        # Split on dash, slash, or ' و '
         chunks = re.split(r'(?:\s+و\s+)|[-/]', m)
         for c in chunks:
             c = c.strip()
             if not c:
                 continue
-
-            # If token == "قصار السور" => keep as is
             if re.match(r'(?i)^قصار\s+السور$', c):
                 all_surahs.append("قصار السور")
             else:
-                # else prefix with "سورة " if doesn't already have "سورة|سور|سورتى"
                 if not re.match(r'^(?:سورة|سورتى|سور)', c, re.IGNORECASE):
                     c = "سورة " + c
                 all_surahs.append(c)
@@ -147,38 +165,58 @@ def parse_surahs(line: str) -> list:
 
 def parse_verse_ranges(line: str) -> dict:
     """
-    'من الآية X سورة Foo ... حتى الآية Y سورة Bar'
-    or 'من أول سورة X حتى ختام سورة Y'
+    If we see "من الآية X ... حتى الآية Y ..." or
+    "من أول سورة كذا حتى ختام سورة كذا",
+    we'll incorporate it into the final 'السورة' field
+    rather than separate fields.
     """
     data = {}
-    # from verse # to verse #
+
     verse_pattern = re.compile(
         r'من\s+الآية\s*(\d+)\s*(?:من\s+)?سورة\s+([^..]+?)\s+'
         r'(?:و?حتى\s+الآية|إلى\s+الآية)\s*(\d+)\s*(?:من\s+)?سورة\s+([^..]+?)\b',
         re.IGNORECASE
     )
-    m_verses = verse_pattern.search(line)
-    if m_verses:
-        data["من_الآية"] = m_verses.group(1).strip()
-        data["سورة_1"]   = m_verses.group(2).strip()
-        data["حتى_الآية"] = m_verses.group(3).strip()
-        data["سورة_2"]   = m_verses.group(4).strip()
+    m1 = verse_pattern.search(line)
+    if m1:
+        data["from_verse"] = m1.group(1).strip()
+        data["sura_1"]     = m1.group(2).strip()
+        data["to_verse"]   = m1.group(3).strip()
+        data["sura_2"]     = m1.group(4).strip()
 
-    # from "أول سورة X" => "ختام سورة Y"
     alt_pattern = re.compile(
         r'من\s+(?:أول\s+)?سورة\s+([^\s]+)\s+'
         r'(?:حتى\s+(?:ختام\s+)?سورة\s+([^\s]+)|وحتى\s+(?:ختام\s+)?سورة\s+([^\s]+))',
         re.IGNORECASE
     )
-    m_alt = alt_pattern.search(line)
-    if m_alt:
-        data["من_الآية"] = "أول"
-        data["سورة_1"]   = m_alt.group(1).strip()
-        surah2 = m_alt.group(2) if m_alt.group(2) else m_alt.group(3)
-        data["حتى_الآية"] = "ختام"
-        data["سورة_2"]   = surah2.strip()
+    m2 = alt_pattern.search(line)
+    if m2:
+        data["from_verse"] = "أول"
+        data["sura_1"]     = m2.group(1).strip()
+        sura2 = m2.group(2) if m2.group(2) else m2.group(3)
+        data["to_verse"]   = "ختام"
+        data["sura_2"]     = sura2.strip()
 
     return data
+
+def incorporate_verse_range_into_surah(sur_str: str, verse_info: dict) -> str:
+    """
+    We fold the verse-range info into the final 'السورة' field,
+    e.g. ' (من الآية 45 سورة ص حتى الآية 61 سورة الزمر)' appended.
+    """
+    if not verse_info:
+        return sur_str
+
+    fv = verse_info.get("from_verse", "")
+    s1 = verse_info.get("sura_1", "")
+    tv = verse_info.get("to_verse", "")
+    s2 = verse_info.get("sura_2", "")
+
+    if not (fv and s1 and tv and s2):
+        return sur_str
+
+    snippet = f" (من الآية {fv} سورة {s1} حتى الآية {tv} سورة {s2})"
+    return sur_str + snippet
 
 #############################
 # F) Final Surah-String Logic
@@ -186,112 +224,104 @@ def parse_verse_ranges(line: str) -> dict:
 
 def transform_surah_list(sur_list: list) -> str:
     """
-    - Remove any leading "سورة|سور|سورتى" from each token (except "قصار السور").
-    - If the *first* token is "قصار السور", keep it as is, then subsequent tokens => "و <token>".
-    - Otherwise, "سورة <token1>" for the first token, subsequent => "و <token>" (no "سورة" repeated).
-    - After building the final string, remove any leftover "سورتي" or "سور".
-    - If multiple 'سورة' appear, keep only the first occurrence, remove from subsequent tokens.
+    e.g. ["سورة السجدة", "سورة الأحزاب"] => "سورة السجدة و الأحزاب".
     """
     if not sur_list:
         return ""
 
-    # 1) Clean each token: remove leading "سورة|سورتى|سور" unless it's "قصار السور"
     cleaned = []
     for s in sur_list:
-        s = s.strip()
-        if re.match(r'(?i)^قصار\s+السور$', s):
+        if re.match(r'(?i)^قصار\s+السور$', s.strip()):
             cleaned.append("قصار السور")
         else:
-            s = re.sub(r'^(?:سورة|سورتى|سور)\s+', '', s, flags=re.IGNORECASE).strip()
-            cleaned.append(s)
-
-    # 2) Build initial string
-    #   e.g. if cleaned = ["البقرة", "القمر", "التحريم"] => "سورة البقرة و القمر و التحريم"
-    #   if cleaned = ["قصار السور", "النمل", "النصر"] => "قصار السور و النمل و النصر"
+            s2 = re.sub(r'^(?:سورة|سورتى|سور)\s+', '', s.strip(), flags=re.IGNORECASE)
+            cleaned.append(s2)
 
     final_parts = []
     for i, token in enumerate(cleaned):
         if i == 0:
-            # first token
             if token.lower() == "قصار السور":
                 final_parts.append("قصار السور")
             else:
-                # prefix with "سورة "
                 final_parts.append(f"سورة {token}")
         else:
-            # subsequent tokens => prefix only "و "
             if token.lower() == "قصار السور":
                 final_parts.append("و قصار السور")
             else:
                 final_parts.append(f"و {token}")
 
-    final_str = " ".join(final_parts)
+    joined = " ".join(final_parts)
+    # remove "سورتى" or standalone "سور"
+    joined = re.sub(r'\b(?:سورتى|سور)\b', '', joined, flags=re.IGNORECASE)
+    joined = re.sub(r'\s+', ' ', joined).strip()
 
-    # 3) Remove any existence of "سورتي" or "سور" from final output.
-    #    e.g. if "سورتى" or "سور" accidentally appear, strip them out.
-    #    We'll do a broad approach:
-    final_str = re.sub(r'\b(?:سورتى|سور)\b', '', final_str, flags=re.IGNORECASE)
-    # fix double spaces if they appear
-    final_str = re.sub(r'\s+', ' ', final_str).strip()
-
-    # 4) If multiple occurrences of "سورة" appear, keep only the first one.
-    #    We'll do a simple approach: find the first "سورة" and remove subsequent ones
-    #    (but not if it's "سورة" inside some other word).
-    #    We'll do it token by token:
-    tokens = final_str.split()
+    # keep only the first standalone "سورة"
+    tokens = joined.split()
     found_sura = False
     for idx, t in enumerate(tokens):
         if re.match(r'(?i)^سورة$', t):
             if not found_sura:
                 found_sura = True
             else:
-                # remove this "سورة"
-                tokens[idx] = ""  # blank it out
+                tokens[idx] = ""
+    joined = " ".join([t for t in tokens if t]).strip()
 
-    final_str = " ".join([t for t in tokens if t]).strip()
-
-    return final_str
+    return joined
 
 #############################
 # G) Single Line => Dict
 #############################
 
 def parse_line(line: str) -> dict:
+    """
+    1) remove brackets/emojis
+    2) find time
+    3) find reciter
+    4) find surahs
+    5) find verse ranges
+    """
     line = remove_brackets(line)
+    line = remove_emojis(line)
 
-    # Time
-    time_match = re.search(r'\b(\d{1,2}(\.\d{1,2}|\:\d{1,2})?[^\d\s]*)', line)
-    raw_time = fix_time_format_flex(time_match.group(1)) if time_match else ""
-    time_val = remove_emojis(raw_time) if raw_time else ""
+    # TIME
+    time_val = ""
+    time_pattern = re.compile(
+        r'(?:الساعة[^0-9]*|\b)(\d{1,2}\s*[:\.]\s*\d{1,2}(?:\s*\(.*?\))?)',
+        re.IGNORECASE
+    )
+    m_time = time_pattern.search(line)
+    if m_time:
+        raw_time = re.sub(r'\s+', ' ', m_time.group(1)).strip()
+        time_val = fix_time_format(raw_time)
 
-    # Reciter
-    raw_reciter = parse_reciter(line)
-    reciter_val = remove_emojis(raw_reciter) if raw_reciter else ""
+    # RECITER
+    reciter_val = parse_reciter(line)
 
-    # Surah List
+    # SURAH list
     sur_list = parse_surahs(line)
-    sur_list = [remove_emojis(x) for x in sur_list]
 
-    # Verse ranges
+    # VERSE range => incorporate later into 'السورة'
     verse_info = parse_verse_ranges(line)
 
-    out = {
-        "الوقت": time_val,
-        "قارئ": reciter_val,
-        "سور_list": sur_list
+    return {
+        "الوقت": time_val.strip() if time_val else "",
+        "قارئ": reciter_val.strip() if reciter_val else "",
+        "سور_list": sur_list,
+        "verse_info": verse_info
     }
-    out.update(verse_info)
-    return out
 
 #############################
 # H) Merge Lines
 #############################
 
 def should_start_new_item(line: str) -> bool:
-    time_pattern = re.compile(r'\b\d{1,2}\s*[:\.]\s*\d{1,2}')
-    if time_pattern.search(line):
+    """
+    Start new item if line begins with: (الساعة|تلاوة|للشيخ|للقارئ) or a time-like pattern
+    """
+    check_line = remove_brackets(line).strip()
+    if re.match(r'^(?:الساعة|تلاوة|للشيخ|للقارئ)', check_line, re.IGNORECASE):
         return True
-    if re.search(r'^\s*(الساعة|تلاوة|للشيخ|للقارئ)', line, re.IGNORECASE):
+    if re.match(r'^\s*\d{1,2}\s*[:\.]\s*\d{1,2}', check_line):
         return True
     return False
 
@@ -318,13 +348,14 @@ def merge_lines(lines):
 
 def parse_schedule_final(raw_text: str) -> list:
     """
-    1) Split lines
-    2) Merge them
-    3) Parse each chunk
-    4) Convert 'سور_list' => final single string
-    5) Fallback strings for empty fields
+    1) Merge lines
+    2) Parse each chunk
+    3) Transform surah list
+    4) Incorporate verse ranges into 'السورة'
+    5) Remove verse range fields => single 'السورة' entry
+    6) If time or reciter or surah is missing => fill with fallback
     """
-    lines = raw_text.split("\n")
+    lines = raw_text.splitlines()
     merged_items = merge_lines(lines)
 
     results = []
@@ -333,24 +364,27 @@ def parse_schedule_final(raw_text: str) -> list:
 
         # If truly empty => skip
         if not (record["الوقت"] or record["قارئ"] or record["سور_list"]):
-            # If no verse info => skip
-            if len(record) == 3:
+            if not record["verse_info"]:
                 continue
 
-        # Transform surah list -> final single surah string
+        # Build final سورة string
         sur_str = transform_surah_list(record["سور_list"])
-        del record["سور_list"]
-        record["السور"] = sur_str
+        sur_str = incorporate_verse_range_into_surah(sur_str, record["verse_info"])
 
-        # Fallback if empty
+        record.pop("سور_list", None)
+        record.pop("verse_info", None)
+
+        record["السورة"] = sur_str
+
+        # Fallback
         if not record["الوقت"]:
             record["الوقت"] = "لم يمكن تحديد الوقت"
         if not record["قارئ"]:
             record["قارئ"] = "لم يمكن التعرف علي القارئ"
-        if not record["السور"]:
-            record["السور"] = "لم يمكن تحديد السورة"
+        if not record["السورة"]:
+            record["السورة"] = "لم يمكن تحديد السورة"
 
-        # remove trailing "و"
+        # Final check for trailing "و"
         record["قارئ"] = re.sub(r'\s+و$', '', record["قارئ"]).strip()
 
         results.append(record)
