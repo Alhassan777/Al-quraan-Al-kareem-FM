@@ -8,12 +8,17 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 # Local imports
 from database import db
 from models import DailySchedule, DailyTableMetadata
-# Replace old parse imports with the NEW parse_logic code
-# from schedule_parsing.parse_logic import parse_quran_schedule, clean_and_merge
 from schedule_parsing.parse_logic import (
     parse_schedule_final,  # the new top-level function
     remove_brackets
 )
+from schedule_parsing.gemini_handler import (
+    # Removed process_schedule_with_gemini and strip_code_fences
+    process_gemini_output,
+    retry_gemini_request
+)
+from schedule_parsing.gemini_handler import PROMPT_TEMPLATE, API_KEY, model
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,75 +52,93 @@ def parse_header_dates(raw_text: str) -> dict:
     return {}
 
 # ------------------------ Helper Functions ------------------------
-
 def process_raw_text(raw_text):
     """
-    Processes raw schedule text and returns structured data:
-      {
+    Processes raw schedule text using Gemini AI (with retry logic), 
+    falling back to existing parsing logic if needed.
+    
+    Returns structured data in the format:
+    {
         "schedule_date": "YYYY-MM-DD",
         "final_schedule": [
-          {"الوقت": "06:00", "قارئ": "Name", "السورة": "Surah"},
-          ...
+            {"الوقت": "06:00", "القارئ": "Name", "السورة": "Surah", "المدة": "Duration(optional)"},
+            ...
         ]
-      }
-    Raises:
-        ValueError: If processing fails due to invalid format or missing data.
+    }
     """
-    logger.info("Starting processing of raw text with NEW parse logic.")
+    logger.info("Starting processing of raw text.")
 
     # Step 1: Parse header for schedule date
     header_info = parse_header_dates(raw_text) or {}
     date_str = header_info.get("التاريخ_الميلادي", "").strip()
-
     if not date_str:
         logger.error("No valid Gregorian date found in the header.")
         raise ValueError("No valid date found in the header.")
 
-    # Remove extra characters from date (e.g. trailing 'م')
+    # Clean the date string
     cleaned_date_str = re.sub(r"[^0-9/]", "", date_str).strip()
     logger.debug(f"Cleaned date string: '{cleaned_date_str}' (original was '{date_str}')")
 
-    # Attempt to parse date
+    # Parse the date
     try:
         schedule_date = datetime.strptime(cleaned_date_str, "%d/%m/%Y").date()
+        logger.debug(f"Parsed schedule date: {schedule_date}")
     except ValueError as ve:
         logger.error(f"Invalid date format in the header: '{cleaned_date_str}'. Error: {ve}")
         raise ValueError("Invalid date format in the header.")
 
-    logger.debug(f"Parsed schedule date: {schedule_date}")
+    # Step 2: Try Gemini (with retries) and then finalize its output
+    try:
+        logger.info("Attempting to process the schedule via Gemini + retry logic.")
+        gemini_raw_result = retry_gemini_request(raw_text, retries=3, backoff_factor=1.0)
+        # Convert Gemini's JSON to our final format
+        gemini_processed = process_gemini_output(gemini_raw_result)
 
-    # Step 2: Use the NEW parser
-    final_schedule = parse_schedule_final(raw_text)
+        # **Override** the date from Gemini with our locally parsed date
+        final_schedule = gemini_processed["final_schedule"]
+        logger.info("Gemini successfully processed the schedule with retry logic.")
+    except Exception as gemini_error:
+        # Gemini (all retries) failed -> fallback to parse_schedule_final
+        logger.error(f"Gemini processing failed: {gemini_error}. Falling back.")
+        try:
+            final_schedule = parse_schedule_final(raw_text)
+            if not final_schedule:
+                raise ValueError("Fallback parsing logic returned an empty schedule.")
+            logger.info("Fallback parsing logic successfully processed the schedule.")
+        except Exception as fallback_error:
+            logger.error(f"Fallback parsing logic failed: {fallback_error}")
+            raise ValueError("Both Gemini (after retries) and fallback parsing failed.")
 
+    # Double-check final schedule
     if not final_schedule:
-        logger.error("Parsed schedule is empty after new parse_schedule_final.")
+        logger.error("Parsed schedule is empty after both Gemini and fallback processing.")
         raise ValueError("Parsed schedule is empty.")
 
     logger.debug(f"Final schedule entries: {len(final_schedule)}")
 
+    # Return structured data (keeping the schedule_date from the header)
     processed_data = {
         "schedule_date": schedule_date.strftime("%Y-%m-%d"),
         "final_schedule": final_schedule
     }
-    logger.info("Completed processing of raw text with new logic.")
+    logger.info("Completed processing of raw text.")
     return processed_data
 
 
 def store_processed_data(processed_data):
     """
     Stores the processed schedule data into the database.
-      processed_data = {
-          "schedule_date": "YYYY-MM-DD",
-          "final_schedule": [
-              {"الوقت": "06:00", "قارئ": "Name", "السورة": "Surah"},
-              ...
-          ]
-      }
+    The expected structure of processed_data is:
+    {
+        "schedule_date": "YYYY-MM-DD",
+        "final_schedule": [...]
+    }
     Raises:
         ValueError if schedule already exists or invalid data.
     """
     logger.info(f"Starting storage of schedule for date: {processed_data['schedule_date']}")
 
+    # Extract fields
     schedule_date_str = processed_data["schedule_date"].strip()
     final_schedule = processed_data["final_schedule"]
 
@@ -132,23 +155,27 @@ def store_processed_data(processed_data):
         logger.warning(f"Schedule for {schedule_date} already exists in daily_table_metadata.")
         raise ValueError(f"Schedule for {schedule_date} already exists.")
 
-    # Insert metadata for the schedule date
+    # Insert metadata
     new_metadata = DailyTableMetadata(schedule_date=schedule_date)
     db.session.add(new_metadata)
 
     # Insert each schedule entry
     for idx, item in enumerate(final_schedule, start=1):
         time_val = item.get("الوقت", "").strip()
-        reciter_val = item.get("قارئ", "").strip()
+        reciter_val = item.get("القارئ", "").strip()
         surah_val = item.get("السورة", "").strip()
+        duration_val = item.get("المدة", "").strip()  # Optional field
 
         logger.debug(
-            f"Inserting entry #{idx}: time={time_val}, reciter={reciter_val}, surah={surah_val}"
+            f"Inserting entry #{idx}: time={time_val}, reciter={reciter_val}, "
+            f"surah={surah_val}, duration={duration_val}"
         )
+
         new_entry = DailySchedule(
             time=time_val,
             reciter=reciter_val,
             surah=surah_val,
+            duration=duration_val,  # optional
             schedule_date=schedule_date,
         )
         db.session.add(new_entry)
@@ -158,7 +185,7 @@ def store_processed_data(processed_data):
     db.session.commit()
     logger.info(f"Schedule for {schedule_date} successfully stored in the database.")
 
-    # Emit a WebSocket event to notify frontend of the new schedule
+    # Emit a WebSocket event
     socketio = current_app.config.get('SOCKETIO')
     if socketio:
         socketio.emit(
@@ -182,10 +209,7 @@ schedule_bp = Blueprint("schedule_bp", __name__)
 def get_all_schedules():
     """
     Fetches the schedule from the database in JSON.
-    1) If user has not provided any new schedule, we STILL want to show
-       the latest schedule. So if the DB has ANY schedule, we show the
-       most recently added date by default.
-    2) We do pagination by time, converting times to user's timezone.
+    ...
     """
     try:
         # user timezone from cookie or default
@@ -201,8 +225,8 @@ def get_all_schedules():
 
         cairo_timezone = ZoneInfo("Africa/Cairo")
 
-        # The user might request a specific date or we just fallback to the LATEST
-        requested_date_str = request.args.get("date", "")  # e.g. ?date=2024-12-21
+        # The user might request a specific date
+        requested_date_str = request.args.get("date", "")  # e.g. ?date=2025-12-21
         logger.info(f"Requested date: {requested_date_str}")
 
         query = DailySchedule.query
@@ -213,9 +237,8 @@ def get_all_schedules():
             except ValueError:
                 logger.warning(f"Invalid requested_date format: {requested_date_str}")
 
-        # If user didn't request a date or the date is invalid, we fallback to the LATEST date
+        # Fallback to the LATEST date
         if not requested_date_str or query.count() == 0:
-            # find the maximum date in daily_table_metadata
             newest_metadata = DailyTableMetadata.query.order_by(DailyTableMetadata.schedule_date.desc()).first()
             if newest_metadata:
                 fallback_date = newest_metadata.schedule_date
@@ -236,9 +259,6 @@ def get_all_schedules():
 
         data = []
         for entry in pagination.items:
-            # Convert time from DB (string) to user's timezone
-            # Assuming DB time is stored in e.g. "06:00" 24-hr or "06:00 AM" 12-hr
-            # We'll attempt 12-hr parse with fallback to 24-hr parse
             time_str = entry.time.strip()
             cairo_dt = None
             for fmt in ("%I:%M %p", "%H:%M"):
@@ -248,6 +268,7 @@ def get_all_schedules():
                     break
                 except ValueError:
                     continue
+
             if not cairo_dt:
                 logger.error(f"Time parsing error for entry ID {entry.id}: '{time_str}'")
                 continue
@@ -262,6 +283,7 @@ def get_all_schedules():
                 "time": converted_time,
                 "reciter": entry.reciter,
                 "surah": entry.surah,
+                "duration": entry.duration if entry.duration else ""
             })
 
         return jsonify({
@@ -292,7 +314,6 @@ def process_schedule():
         raw_text = data["raw_text"].strip()
         logger.info(f"Received raw text for processing (length={len(raw_text)}).")
 
-        # Process using new code
         processed_data = process_raw_text(raw_text)
 
         return jsonify({
@@ -319,7 +340,7 @@ def store_schedule():
     - Structured data: {
         "schedule_date": "YYYY-MM-DD",
         "final_schedule": [
-            {"الوقت": "06:00", "قارئ": "Name", "السورة": "Surah"},
+            {"الوقت": "06:00", "القارئ": "Name", "السورة": "Surah", "المدة": "Optional"},
             ...
         ]
     }
@@ -331,7 +352,7 @@ def store_schedule():
             logger.warning("No input data provided.")
             return jsonify({"error": "No input data provided"}), 400
 
-        # Case 1: "raw_text"
+        # Case 1: raw_text
         if "raw_text" in data:
             raw_text = data["raw_text"].strip()
             logger.info(f"Received raw text for processing (length={len(raw_text)}).")
@@ -342,7 +363,7 @@ def store_schedule():
                 logger.error(f"Processing error: {ve}")
                 return jsonify({"error": str(ve)}), 400
 
-            # Now store the processed_data
+            # Store the processed data
             try:
                 store_processed_data(processed_data)
             except ValueError as ve:
@@ -390,9 +411,11 @@ def store_schedule():
                 if not isinstance(entry, dict):
                     logger.warning(f"Schedule entry #{idx} is not a JSON object.")
                     return jsonify({"error": f"Schedule entry #{idx} is invalid."}), 400
-                if not all(key in entry for key in ("الوقت", "قارئ", "السورة")):
-                    logger.warning(f"Missing keys in schedule entry #{idx}.")
-                    return jsonify({"error": f"Missing 'الوقت', 'قارئ', or 'السورة' in entry #{idx}."}), 400
+                if not all(k in entry for k in ("الوقت", "قارئ", "السورة")):
+                    logger.warning(f"Missing mandatory keys in schedule entry #{idx}.")
+                    return jsonify({
+                        "error": f"Missing 'الوقت', 'قارئ', or 'السورة' in entry #{idx}."
+                    }), 400
 
             logger.info(f"Storing schedule for date: {schedule_date}")
 
@@ -406,16 +429,19 @@ def store_schedule():
 
             for idx, item in enumerate(final_schedule, start=1):
                 time_val = item.get("الوقت", "").strip()
-                reciter_val = item.get("قارئ", "").strip()
+                reciter_val = item.get("القارئ", "").strip()
                 surah_val = item.get("السورة", "").strip()
+                duration_val = item.get("المدة", "").strip()  # optional
 
                 logger.debug(
-                    f"Inserting entry #{idx}: time={time_val}, reciter={reciter_val}, surah={surah_val}"
+                    f"Inserting entry #{idx}: time={time_val}, reciter={reciter_val}, "
+                    f"surah={surah_val}, duration={duration_val}"
                 )
                 new_entry = DailySchedule(
                     time=time_val,
                     reciter=reciter_val,
                     surah=surah_val,
+                    duration=duration_val,
                     schedule_date=schedule_date,
                 )
                 db.session.add(new_entry)
@@ -466,29 +492,35 @@ def store_schedule():
 @schedule_bp.route("/process_and_store", methods=["POST"])
 def process_and_store_schedule():
     """
-    Combined endpoint to process raw schedule text and store it in the database.
-    Expects JSON payload: { "raw_text": "schedule text" }.
-    Returns confirmation of successful storage.
+    Endpoint to process raw schedule text using Gemini AI (with retries) 
+    or fallback logic, then store in the DB.
     """
     try:
         data = request.get_json()
         if not data or "raw_text" not in data:
-            logger.warning("No raw_text provided.")
-            return jsonify({"error": "No raw_text provided"}), 400
+            logger.warning("No raw_text provided in the request.")
+            return jsonify({
+                "error": "No raw_text provided. Please provide the schedule text in the request payload."
+            }), 400
 
         raw_text = data["raw_text"].strip()
-        logger.info(f"Received raw text for process_and_store (len={len(raw_text)}).")
+        logger.info(f"Received raw text for processing and storage (length={len(raw_text)}).")
 
         # Process
         try:
             processed_data = process_raw_text(raw_text)
+            logger.info("Successfully processed raw text into structured data.")
         except ValueError as ve:
             logger.error(f"Processing error: {ve}")
             return jsonify({"error": str(ve)}), 400
+        except Exception as e:
+            logger.error(f"Unexpected error during processing: {e}", exc_info=True)
+            return jsonify({"error": "Failed to process the schedule text."}), 500
 
         # Store
         try:
             store_processed_data(processed_data)
+            logger.info(f"Successfully stored schedule for date: {processed_data['schedule_date']}")
         except ValueError as ve:
             logger.error(f"Storage error: {ve}")
             db.session.rollback()
@@ -496,29 +528,20 @@ def process_and_store_schedule():
         except Exception as e:
             logger.error(f"Unexpected storage error: {e}", exc_info=True)
             db.session.rollback()
-            return jsonify({"error": "Failed to store schedule."}), 500
+            return jsonify({"error": "Failed to store the schedule in the database."}), 500
 
+        # Done
         return jsonify({
             "status": "success",
-            "message": f"Schedule for {processed_data['schedule_date']} stored successfully."
+            "message": f"Schedule for {processed_data['schedule_date']} processed and stored successfully."
         }), 200
 
     except Exception as e:
         logger.error(f"Error in process_and_store_schedule: {e}", exc_info=True)
         db.session.rollback()
-        return jsonify({"error": "Failed to process and store schedule"}), 500
-
-
-@schedule_bp.route("/debug/raw_and_parsed", methods=["GET"])
-def debug_raw_and_parsed():
-    """
-    Debug endpoint to view raw text, parsed data,
-    etc. Not heavily used.
-    """
-    return jsonify({
-        "message": "Debug endpoint with limited utility now.",
-        "instruction": "Use /process or /process_and_store."
-    }), 200
+        return jsonify({
+            "error": "An unexpected error occurred while processing and storing the schedule."
+        }), 500
 
 
 @schedule_bp.route("/clear_old", methods=["DELETE"])
@@ -557,6 +580,7 @@ def clear_old_schedules():
         db.session.rollback()
         return jsonify({"error": "Failed to clear old schedules."}), 500
 
+
 @schedule_bp.route("/debug/timezone", methods=["GET"])
 def debug_timezone():
     """
@@ -576,3 +600,39 @@ def debug_timezone():
         "user_time": now_user.strftime("%Y-%m-%d %H:%M:%S %Z"),
         "user_timezone": user_timezone_str
     }), 200
+
+# Debug endpoint to view raw Gemini response
+@schedule_bp.route("/gemini/debug", methods=["GET", "POST"])
+def debug_gemini_response():
+    """
+    Endpoint to debug Gemini response.
+    Accepts raw_text via GET (query params) or POST (form data).
+    """
+    try:
+        raw_text = ""
+        if request.method == "POST":
+            raw_text = request.form.get("raw_text", "").strip()
+        elif request.method == "GET":
+            raw_text = request.args.get("raw_text", "").strip()
+
+        if not raw_text:
+            logger.warning("No raw_text provided in the request.")
+            return "<h1>No raw_text provided.</h1>", 400
+
+        logger.info(f"Received raw text for Gemini debugging (length={len(raw_text)}).")
+
+        # Process the input with Gemini
+        prompt = PROMPT_TEMPLATE.format(raw_text=raw_text)
+        response = model.generate_content(prompt)
+
+        if not response.text:
+            logger.error("No response received from Gemini.")
+            return "<h1>Gemini API returned an empty response.</h1>", 500
+
+        # Here, we do NOT strip fences explicitly, so we can see raw output
+        raw_response = response.text
+        return f"<pre>{raw_response}</pre>", 200
+
+    except Exception as e:
+        logger.error(f"Error in Gemini debug endpoint: {e}", exc_info=True)
+        return f"<h1>Failed to process Gemini response for debugging:</h1><pre>{e}</pre>", 500
