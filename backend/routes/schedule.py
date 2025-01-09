@@ -251,7 +251,7 @@ def get_all_schedules():
 
         # Pagination
         page = request.args.get("page", 1, type=int)
-        per_page = request.args.get("per_page", 20, type=int)
+        per_page = request.args.get("per_page", 100, type=int)
 
         pagination = query.order_by(DailySchedule.time.asc()).paginate(
             page=page, per_page=per_page, error_out=False
