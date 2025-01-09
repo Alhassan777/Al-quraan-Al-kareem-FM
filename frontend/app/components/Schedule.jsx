@@ -213,27 +213,31 @@ export default function Schedule() {
                       <tr className="bg-blue-700 text-white">
                         <th className="border px-4 py-3 text-center">القارئ</th>
                         <th className="border px-4 py-3 text-center">السورة</th>
-                        <th className="border px-4 py-3 text-center">الوقت</th>
+                        <th className="border px-4 py-3 text-center">الميعاد</th>
+                        <th className="border px-4 py-3 text-center">المدة (دقيقة)</th> {/* New Column */}
                       </tr>
                     </thead>
-                    <tbody>
-                      {programSchedule.map((item, index) => (
-                        <tr
-                          key={index}
-                          className={`${
-                            index % 2 === 0 ? "bg-white" : "bg-gray-100"
-                          } hover:bg-gray-200`}
-                        >
-                          <td className="border px-4 py-2 font-semibold text-green-700">
-                            {item.reciter}
-                          </td>
-                          <td className="border px-4 py-2 text-blue-700">{item.surah}</td>
-                          <td className="border px-4 py-2 text-red-700 text-center">
-                            {item.time}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
+                      <tbody>
+                        {programSchedule.map((item, index) => (
+                          <tr
+                            key={index}
+                            className={`${
+                              index % 2 === 0 ? "bg-white" : "bg-gray-100"
+                            } hover:bg-gray-200`}
+                          >
+                            <td className="border px-4 py-2 font-semibold text-green-700">
+                              {item.reciter}
+                            </td>
+                            <td className="border px-4 py-2 text-blue-700">{item.surah}</td>
+                            <td className="border px-4 py-2 text-red-700 text-center">
+                              {item.time}
+                            </td>
+                            <td className="border px-4 py-2 text-black text-center"> {/* Black text for duration */}
+                              {item.duration}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
                   </table>
                 </div>
               </>

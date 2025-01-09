@@ -78,7 +78,14 @@ const Player = () => {
   const [status, setStatus] = useState("Ready to play");
   const [recordedChunks, setRecordedChunks] = useState([]);
   const [volume, setVolume] = useState(1); // Normalized volume (0–1)
+
+  // --------------------------------------
+  //  NEW: Duration + Unit for recording
+  // --------------------------------------
   const [recordingDuration, setRecordingDuration] = useState(10);
+  const [recordingUnit, setRecordingUnit] = useState("seconds"); 
+  // "seconds" | "minutes" | "hours" | "manual"
+
   const [isConverting, setIsConverting] = useState(false);
   const [isLive, setIsLive] = useState(false);
 
@@ -270,21 +277,34 @@ const Player = () => {
       setIsRecording(true);
       setStatus("Recording...");
 
-      recordingTimeoutRef.current = setTimeout(() => {
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
-        setStatus("Recording stopped after time limit.");
+      // Compute total recording time based on unit
+      let totalDuration = 0;
+      if (recordingUnit === "seconds") {
+        totalDuration = recordingDuration;
+      } else if (recordingUnit === "minutes") {
+        totalDuration = recordingDuration * 60;
+      } else if (recordingUnit === "hours") {
+        totalDuration = recordingDuration * 3600;
+      } 
+      // If "manual", totalDuration will remain 0 => no auto stop
 
-        setTimeout(() => {
-          if (recordedChunks.length > 0) {
-            const webmBlob = new Blob(recordedChunks, {
-              type: mediaRecorderRef.current.mimeType,
-            });
-            processRecording(webmBlob);
-            setRecordedChunks([]);
-          }
-        }, 200);
-      }, recordingDuration * 1000);
+      if (totalDuration > 0) {
+        recordingTimeoutRef.current = setTimeout(() => {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+          setStatus("Recording stopped after time limit.");
+
+          setTimeout(() => {
+            if (recordedChunks.length > 0) {
+              const webmBlob = new Blob(recordedChunks, {
+                type: mediaRecorderRef.current.mimeType,
+              });
+              processRecording(webmBlob);
+              setRecordedChunks([]);
+            }
+          }, 200);
+        }, totalDuration * 1000);
+      }
     }
   };
 
@@ -435,20 +455,35 @@ const Player = () => {
             }}
           />
 
-          {/* Recording Duration Input */}
-          <div className="flex items-center space-x-2">
-            <label htmlFor="duration" className="text-sm text-white/70">
-              Recording Limit (s)
-            </label>
-            <input
-              id="duration"
-              type="number"
-              min="5"
-              max="60"
-              value={recordingDuration}
-              onChange={(e) => setRecordingDuration(parseInt(e.target.value, 10))}
-              className="w-16 text-center text-white bg-white/10 border border-white/20 rounded"
-            />
+          {/* --------------------------------------------- */}
+          {/*     Recording Duration / Manual Stop Picker    */}
+          {/* --------------------------------------------- */}
+          <div className="flex flex-col items-center bg-[#112436] p-4 rounded shadow-md">
+            <label className="text-sm text-white/70 mb-2">Recording Limit</label>
+            
+            <div className="flex items-center space-x-2">
+              {/* Numeric input for the duration */}
+              <input
+                type="number"
+                min="1"
+                value={recordingDuration}
+                onChange={(e) => setRecordingDuration(parseInt(e.target.value, 10))}
+                className="w-16 text-center text-white bg-white/10 border border-white/20 rounded"
+                disabled={recordingUnit === "manual"}
+              />
+
+              {/* Dropdown to choose unit */}
+              <select
+                value={recordingUnit}
+                onChange={(e) => setRecordingUnit(e.target.value)}
+                className="text-white bg-white/10 border border-white/20 rounded px-2"
+              >
+                <option value="seconds">Seconds</option>
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -484,7 +519,6 @@ const Player = () => {
         ref={audioRef}
         preload="auto"
         crossOrigin="anonymous"
-        // Some browsers benefit from specifying the type:
         type="audio/mpeg"
         className="hidden"
       />
