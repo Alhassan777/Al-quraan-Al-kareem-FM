@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { FaYoutube } from "react-icons/fa";
 import io from "socket.io-client"; // Import Socket.IO client
-import Cookies from 'js-cookie'; // Import js-cookie for cookie handling
-import TimezoneDetector from './TimezoneDetector.jsx'; // Ensure this is included
+import Cookies from "js-cookie"; // Import js-cookie for cookie handling
+import { DateTime } from "luxon"; // Import Luxon for timezone conversion
+import TimezoneDetector from "./TimezoneDetector.jsx"; // Timezone detection component
 
 export default function Schedule() {
   const [activeTab, setActiveTab] = useState("sheikhs"); // "sheikhs" or "programs"
@@ -18,6 +19,11 @@ export default function Schedule() {
   const [socket, setSocket] = useState(null);
   const [scheduleDate, setScheduleDate] = useState(null); // State for the schedule date
 
+  // NEW: Toggle to show local time vs. Cairo time
+  // true => show local time
+  // false => show Cairo time
+  const [showLocalTime, setShowLocalTime] = useState(true);
+
   useEffect(() => {
     fetchSheikhPrograms();
     fetchProgramSchedule();
@@ -25,7 +31,7 @@ export default function Schedule() {
     // Initialize Socket.IO client with WebSocket transport
     const newSocket = io("http://127.0.0.1:5000", {
       transports: ["websocket"], // Force WebSocket transport
-      withCredentials: true, // Ensure cookies are sent with the connection
+      withCredentials: true,     // Ensure cookies are sent with the connection
     });
     setSocket(newSocket);
 
@@ -53,8 +59,8 @@ export default function Schedule() {
         ? `/api/playlists/?q=${encodeURIComponent(search)}`
         : "/api/playlists/";
       const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include', // Include cookies in the request
+        method: "GET",
+        credentials: "include", // Include cookies in the request
       });
       if (!response.ok) throw new Error("Failed to fetch sheikh programs");
       const data = await response.json();
@@ -71,14 +77,42 @@ export default function Schedule() {
     try {
       setLoadingPrograms(true);
       setErrorPrograms(null);
+
       const response = await fetch("http://127.0.0.1:5000/api/schedule/all", {
-        method: 'GET',
-        credentials: 'include', // Include cookies in the request
+        method: "GET",
+        credentials: "include",
       });
       if (!response.ok) throw new Error("Failed to fetch program schedule");
       const data = await response.json();
-      setProgramSchedule(data.data);
-      if (data.data.length > 0) setScheduleDate(data.data[0].schedule_date); // Set the schedule date
+
+      const userTimezone = Cookies.get("user_timezone") || "UTC"; // Fallback to UTC
+
+      const convertedSchedule = data.data.map((item) => {
+        const date = scheduleDate || "2025-01-09"; // Fallback date
+        // item.time is e.g. "01:00 AM" (Cairo local time)
+        // Combine date + time and parse as Cairo time
+        const cairoDateTime = DateTime.fromFormat(
+          `${date} ${item.time}`,
+          "yyyy-MM-dd hh:mm a",
+          { zone: "Africa/Cairo" }
+        );
+
+        // Convert to user's local time
+        const localTime = cairoDateTime.setZone(userTimezone).toFormat("hh:mm a");
+
+        return {
+          ...item,
+          // Keep the original Cairo time in `item.time`
+          // Save the converted local time separately
+          localTime,
+        };
+      });
+
+      setProgramSchedule(convertedSchedule);
+
+      if (convertedSchedule.length > 0) {
+        setScheduleDate(data.data[0].schedule_date); // Set schedule date
+      }
     } catch (err) {
       setErrorPrograms("خطأ في تحميل جدول البرامج");
       console.error("Error fetching program schedule:", err);
@@ -91,9 +125,14 @@ export default function Schedule() {
     item.reciter.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Handler to toggle between local time and Cairo time
+  const toggleTimeDisplay = () => {
+    setShowLocalTime((prev) => !prev);
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-4xl" dir="rtl">
-      {/* Timezone Detector */}
+      {/* Timezone Detector to set user_timezone cookie */}
       <TimezoneDetector />
 
       <div className="bg-white rounded-xl shadow-lg p-6">
@@ -207,6 +246,30 @@ export default function Schedule() {
                     جدول اليوم: {scheduleDate}
                   </div>
                 )}
+
+                {/* 
+                  Toggle Button: Switch between local time and Cairo time.
+                  showLocalTime = true => local time
+                  showLocalTime = false => original Cairo time (item.time)
+                */}
+                <div className="flex justify-end items-center mb-2">
+                  <button
+                    onClick={toggleTimeDisplay}
+                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all"
+                  >
+                    {showLocalTime
+                      ? "عرض بتوقيت القاهرة" 
+                      : "عرض بتوقيتك المحلي"}
+                  </button>
+                </div>
+
+                {/* Indicator explaining which time is currently displayed */}
+                <div className="text-right text-sm text-gray-600 mb-4">
+                  {showLocalTime
+                    ? "يتم الآن عرض المواعيد حسب توقيتك المحلي" 
+                    : "يتم الآن عرض المواعيد حسب توقيت القاهرة"}
+                </div>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-right border-collapse">
                     <thead>
@@ -214,11 +277,16 @@ export default function Schedule() {
                         <th className="border px-4 py-3 text-center">القارئ</th>
                         <th className="border px-4 py-3 text-center">السورة</th>
                         <th className="border px-4 py-3 text-center">الميعاد</th>
-                        <th className="border px-4 py-3 text-center">المدة (دقيقة)</th> {/* New Column */}
+                        <th className="border px-4 py-3 text-center">المدة (دقيقة)</th>
                       </tr>
                     </thead>
-                      <tbody>
-                        {programSchedule.map((item, index) => (
+                    <tbody>
+                      {programSchedule.map((item, index) => {
+                        const displayedTime = showLocalTime
+                          ? item.localTime // user's local timezone
+                          : item.time;     // original Cairo time
+
+                        return (
                           <tr
                             key={index}
                             className={`${
@@ -228,16 +296,19 @@ export default function Schedule() {
                             <td className="border px-4 py-2 font-semibold text-green-700">
                               {item.reciter}
                             </td>
-                            <td className="border px-4 py-2 text-blue-700">{item.surah}</td>
-                            <td className="border px-4 py-2 text-red-700 text-center">
-                              {item.time}
+                            <td className="border px-4 py-2 text-blue-700">
+                              {item.surah}
                             </td>
-                            <td className="border px-4 py-2 text-black text-center"> {/* Black text for duration */}
+                            <td className="border px-4 py-2 text-red-700 text-center">
+                              {displayedTime}
+                            </td>
+                            <td className="border px-4 py-2 text-black text-center">
                               {item.duration}
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
+                        );
+                      })}
+                    </tbody>
                   </table>
                 </div>
               </>
