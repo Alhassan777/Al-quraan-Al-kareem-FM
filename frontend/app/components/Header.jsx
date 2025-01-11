@@ -1,8 +1,8 @@
 "use client";
 
-import React from 'react';
-import PropTypes from 'prop-types';
-import Link from 'next/link';
+import React from "react";
+import PropTypes from "prop-types";
+import Link from "next/link";
 
 const Header = ({ title, subtitle }) => {
   return (
@@ -15,7 +15,7 @@ const Header = ({ title, subtitle }) => {
           href="/"
           className="text-[#C4A661] underline hover:text-[#E3B862] transition duration-200"
         >
-          الصفحة الرئيسية
+          البث المباشر للإذاعة
         </Link>
         <Link
           href="/schedule"
@@ -23,10 +23,17 @@ const Header = ({ title, subtitle }) => {
         >
           جدول البرامج
         </Link>
+        <Link
+          href="/contact"
+          className="text-[#C4A661] underline hover:text-[#E3B862] transition duration-200"
+        >
+          تواصل معنا
+        </Link>
       </nav>
     </header>
   );
 };
+
 
 Header.propTypes = {
   title: PropTypes.string.isRequired,
@@ -34,7 +41,7 @@ Header.propTypes = {
 };
 
 Header.defaultProps = {
-  subtitle: '',
+  subtitle: "",
 };
 
 export default Header;

@@ -5,11 +5,13 @@ import Header from './components/Header.jsx';
 import Player from './components/Player.jsx';
 import Status from './components/Status.jsx';
 import TimezoneDetector from './components/TimezoneDetector.jsx';
+import Reminders from './components/Reminders.jsx';
+
 
 import '../style/global.css';
 
 export default function Home() {
-  const [statusMessage, setStatusMessage] = useState("مرحبًا بك! جاهز لبث إذاعة القرآن الكريم.");
+  const [statusMessage, setStatusMessage] = useState(" مرحبًا بك في البث المباشر للإذاعة القرآن الكريم من القاهرة 🕌 🌙");
   const [statusType, setStatusType] = useState("default");
   const [volume, setVolume] = useState(80);
 
@@ -25,9 +27,12 @@ export default function Home() {
 
       {/* Header Component */}
       <Header
-        subtitle="إذاعة القرآن الكريم من القاهرة"
       />
-
+      
+      {/* Reminders Component */}
+      <Reminders 
+      
+      />
       {/* Main Content */}
       <main className="w-full max-w-5xl px-4 py-6 space-y-6">
         {/* Status Display */}

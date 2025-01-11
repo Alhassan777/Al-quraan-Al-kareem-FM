@@ -4,6 +4,7 @@ import React from 'react';
 import Header from '../components/Header';
 import Schedule from '../components/Schedule';
 import TimezoneDetector from '../components/TimezoneDetector.jsx'; // Ensure correct import path
+import Reminders from '../components/Reminders.jsx';
 
 const SchedulePage = () => {
   return (
@@ -13,10 +14,10 @@ const SchedulePage = () => {
 
       {/* Header Component */}
       <Header
-        title="إذاعة القرآن الكريم"
         subtitle="جدول البرامج"
       />
-
+      <Reminders 
+      />
       {/* Schedule Component */}
       <main className="max-w-5xl mx-auto px-4 py-6">
         <Schedule />

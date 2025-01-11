@@ -7,7 +7,7 @@ import { Play, Pause, Mic, StopCircle } from "lucide-react";
 //  VolumeSlider component
 // ----------------------------------------------------------------
 const VolumeSlider = ({ volume, onVolumeChange }) => {
-  const [status, setStatus] = useState("مرحبًا بك! جاهز لتعديل مستوى الصوت.");
+  const [status, setStatus] = useState("تعديل مستوي الصوت");
 
   const handleVolumeChange = (e) => {
     const newVolume = Number(e.target.value); // 0–100
@@ -459,7 +459,7 @@ const Player = () => {
           {/*     Recording Duration / Manual Stop Picker    */}
           {/* --------------------------------------------- */}
           <div className="flex flex-col items-center bg-[#112436] p-4 rounded shadow-md">
-            <label className="text-sm text-white/70 mb-2">Recording Limit</label>
+            <label className="text-sm text-white/70 mb-2">اختيار مدة التسجيل</label>
             
             <div className="flex items-center space-x-2">
               {/* Numeric input for the duration */}
@@ -478,10 +478,10 @@ const Player = () => {
                 onChange={(e) => setRecordingUnit(e.target.value)}
                 className="text-white bg-white/10 border border-white/20 rounded px-2"
               >
-                <option value="seconds">Seconds</option>
-                <option value="minutes">Minutes</option>
-                <option value="hours">Hours</option>
-                <option value="manual">Manual</option>
+                <option value="seconds">ثواني</option>
+                <option value="minutes">دقائق</option>
+                <option value="hours">ساعات</option>
+                <option value="manual">يدويًا</option>
               </select>
             </div>
           </div>
