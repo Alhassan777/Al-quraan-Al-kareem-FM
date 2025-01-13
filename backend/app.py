@@ -148,10 +148,10 @@ def main():
         port = int(os.getenv("PORT", 5000))  # Use the PORT environment variable
         socketio.run(
             app,
-            debug=True,            # Set to False in production
+            debug=False,            # Set to False in production
             port=port,
-            allow_unsafe_werkzeug=True,  # Remove or set to False in production
-            use_reloader=False,    # Disable reloader if using SocketIO
+            allow_unsafe_werkzeug=False,  # Remove or set to False in production
+            use_reloader=False    # Disable reloader if using SocketIO
         )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}")
