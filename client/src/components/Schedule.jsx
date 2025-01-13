@@ -60,8 +60,8 @@ export default function Schedule() {
       setLoadingSheikhs(true);
       setErrorSheikhs(null);
       const url = search
-        ? `/api/playlists/?q=${encodeURIComponent(search)}`
-        : "/api/playlists/";
+        ? `${BASE_URL}/api/playlists/?q=${encodeURIComponent(search)}`
+        : `${BASE_URL}/api/playlists/`;
       const response = await fetch(url, {
         method: "GET",
         credentials: "include", // Include cookies in the request

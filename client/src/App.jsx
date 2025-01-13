@@ -30,8 +30,6 @@ export default function App() {
 
       {/* Header Component */}
       <Header
-        title="Welcome to Quran Kareem Radio"
-        subtitle="Your source for live Quranic broadcasts from Cairo 🕌 🌙"
       />
       
       {/* Reminders Component */}

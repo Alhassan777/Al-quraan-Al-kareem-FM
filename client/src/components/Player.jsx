@@ -1,7 +1,8 @@
-"use client";
+// Player.jsx
 
 import React, { useState, useRef, useEffect } from "react";
 import { Play, Pause, Mic, StopCircle } from "lucide-react";
+import axios from "axios"; // Ensure axios is installed: npm install axios
 
 // ----------------------------------------------------------------
 //  VolumeSlider component
@@ -70,24 +71,73 @@ const VolumeSlider = ({ volume, onVolumeChange }) => {
 };
 
 // ----------------------------------------------------------------
+//  RecordingsList component
+// ----------------------------------------------------------------
+const RecordingsList = () => {
+  const [recordings, setRecordings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const fetchRecordings = async () => {
+    try {
+      const response = await axios.get("http://localhost:3001/recordings");
+      setRecordings(response.data.recordings);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecordings();
+    const interval = setInterval(fetchRecordings, 60000); // Refresh every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading)
+    return <p className="text-white">Loading recordings...</p>;
+  if (error)
+    return <p className="text-red-500">Error: {error}</p>;
+
+  return (
+    <div className="bg-[#112436] p-4 rounded-lg shadow-md w-full max-w-md">
+      <h2 className="text-[#C4A661] text-lg mb-2">Available Recordings</h2>
+      {recordings.length === 0 ? (
+        <p className="text-white">No recordings available.</p>
+      ) : (
+        <ul>
+          {recordings.map((rec) => (
+            <li key={rec.name} className="flex justify-between items-center mb-2">
+              <span className="text-white">{rec.name.replace(".mp3", "")}</span>
+              <a
+                href={rec.url}
+                download
+                className="text-[#C4A661] hover:underline"
+              >
+                Download
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------
 //  Player component
 // ----------------------------------------------------------------
 const Player = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Ready to play");
-  const [recordedChunks, setRecordedChunks] = useState([]);
   const [volume, setVolume] = useState(1); // Normalized volume (0–1)
 
-  // --------------------------------------
-  //  NEW: Duration + Unit for recording
-  // --------------------------------------
+  // Recording duration and unit
   const [recordingDuration, setRecordingDuration] = useState(10);
   const [recordingUnit, setRecordingUnit] = useState("seconds"); 
   // "seconds" | "minutes" | "hours" | "manual"
-
-  const [isConverting, setIsConverting] = useState(false);
-  const [isLive, setIsLive] = useState(false);
 
   // Visual indicators
   const [streamingBlink, setStreamingBlink] = useState(false);
@@ -95,91 +145,17 @@ const Player = () => {
 
   // Refs
   const audioRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const audioCtxRef = useRef(null);
-  const sourceNodeRef = useRef(null);
-  const destinationNodeRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
 
-  // The URL to your proxied or direct stream
-  const streamUrls = ["http://localhost:3001/proxyStream"];
-
-  // ----------------------------------
-  //   EFFECT: Initialize Audio
-  // ----------------------------------
-  useEffect(() => {
-    if (typeof window.lamejs === "undefined") {
-      setStatus("Warning: lamejs not loaded. MP3 conversion will not work.");
-    }
-
-    const initializeAudio = async () => {
-      if (!audioRef.current) {
-        setStatus("Audio element not ready.");
-        return;
-      }
-
-      try {
-        // Create or resume an AudioContext
-        if (!audioCtxRef.current) {
-          audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-        }
-
-        // Create media element source
-        if (!sourceNodeRef.current) {
-          sourceNodeRef.current = audioCtxRef.current.createMediaElementSource(audioRef.current);
-          sourceNodeRef.current.connect(audioCtxRef.current.destination);
-        }
-
-        // Create a MediaStreamDestination for recording
-        if (!destinationNodeRef.current) {
-          destinationNodeRef.current = audioCtxRef.current.createMediaStreamDestination();
-          sourceNodeRef.current.connect(destinationNodeRef.current);
-        }
-
-        // Create a MediaRecorder
-        if (!mediaRecorderRef.current) {
-          const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-            ? "audio/webm;codecs=opus"
-            : "audio/webm";
-
-          const recorder = new MediaRecorder(destinationNodeRef.current.stream, {
-            mimeType,
-            bitsPerSecond: 128000,
-          });
-
-          recorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-              setRecordedChunks((prev) => [...prev, event.data]);
-            }
-          };
-
-          mediaRecorderRef.current = recorder;
-        }
-
-        setStatus("Recording system initialized.");
-      } catch (error) {
-        console.error("Error initializing audio:", error);
-        setStatus(`Error initializing audio: ${error.message}`);
-      }
-    };
-
-    initializeAudio();
-
-    return () => {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch((err) => {
-          console.error("Error closing audio context:", err);
-        });
-      }
-    };
-  }, []);
+  // The direct streaming URL
+  const streamUrl = "https://n10.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABk-06_7wAAb2D9o5zdb4y4A";
 
   // ----------------------------------
   //   EFFECT: Blinking (Streaming)
   // ----------------------------------
   useEffect(() => {
     let intervalId;
-    if (isLive) {
+    if (isPlaying) {
       intervalId = setInterval(() => {
         setStreamingBlink((prev) => !prev);
       }, 500);
@@ -189,23 +165,25 @@ const Player = () => {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isLive]);
+  }, [isPlaying]);
 
   // ----------------------------------
   //   EFFECT: Flip Animation (REC)
   // ----------------------------------
   useEffect(() => {
-    setRecordingFlip(true);
-    const timer = setTimeout(() => {
-      setRecordingFlip(false);
-    }, 300);
-    return () => clearTimeout(timer);
+    if (isRecording) {
+      setRecordingFlip(true);
+      const timer = setTimeout(() => {
+        setRecordingFlip(false);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
   }, [isRecording]);
 
   // ----------------------------------
   //   DERIVED IMAGE PATHS
   // ----------------------------------
-  const streamingSrc = isLive
+  const streamingSrc = isPlaying
     ? streamingBlink
       ? "Streaming On.png"
       : "Streaming Off.png"
@@ -217,21 +195,17 @@ const Player = () => {
   // ----------------------------------
   const togglePlayPause = async () => {
     try {
-      if (!audioRef.current || !audioCtxRef.current) return;
+      if (!audioRef.current) return;
 
       if (isPlaying) {
         // Pause
         audioRef.current.pause();
         setStatus("Playback paused");
         setIsPlaying(false);
-        setIsLive(false);
       } else {
         // Set the stream URL and ensure audio element reloads
-        audioRef.current.src = streamUrls[0];
+        audioRef.current.src = streamUrl;
         audioRef.current.load();
-
-        // IMPORTANT: Resume AudioContext (in case it’s suspended)
-        await audioCtxRef.current.resume();
 
         // Now try playing
         await audioRef.current.play();
@@ -239,7 +213,6 @@ const Player = () => {
         
         setStatus("Playing stream");
         setIsPlaying(true);
-        setIsLive(true);
       }
     } catch (error) {
       console.error("Playback error:", error);
@@ -247,139 +220,64 @@ const Player = () => {
     }
   };
 
-  // Start/stop recording
-  const toggleRecording = () => {
-    if (!mediaRecorderRef.current) {
-      setStatus("Recording system not ready.");
-      return;
-    }
-
+  // Start/stop recording via server
+  const toggleRecording = async () => {
     if (isRecording) {
-      // Stop existing recording
-      mediaRecorderRef.current.stop();
-      clearTimeout(recordingTimeoutRef.current);
-      setIsRecording(false);
-      setStatus("Recording stopped.");
-
-      setTimeout(() => {
-        if (recordedChunks.length > 0) {
-          const webmBlob = new Blob(recordedChunks, {
-            type: mediaRecorderRef.current.mimeType,
-          });
-          processRecording(webmBlob);
-          setRecordedChunks([]);
-        }
-      }, 100);
+      // Stop recording
+      try {
+        await axios.post('http://localhost:3001/stop-recording');
+        setStatus("Recording stopped.");
+        setIsRecording(false);
+        clearTimeout(recordingTimeoutRef.current);
+      } catch (error) {
+        console.error("Error stopping recording:", error);
+        setStatus(`Error stopping recording: ${error.message}`);
+      }
     } else {
-      // Start a new recording
-      setRecordedChunks([]);
-      mediaRecorderRef.current.start(1000); // timeslice=1000ms
-      setIsRecording(true);
-      setStatus("Recording...");
+      // Start recording
+      try {
+        await axios.post('http://localhost:3001/start-recording');
+        setStatus("Recording started.");
+        setIsRecording(true);
 
-      // Compute total recording time based on unit
-      let totalDuration = 0;
-      if (recordingUnit === "seconds") {
-        totalDuration = recordingDuration;
-      } else if (recordingUnit === "minutes") {
-        totalDuration = recordingDuration * 60;
-      } else if (recordingUnit === "hours") {
-        totalDuration = recordingDuration * 3600;
-      } 
-      // If "manual", totalDuration will remain 0 => no auto stop
+        // Compute total recording time based on unit
+        let totalDuration = 0;
+        if (recordingUnit === "seconds") {
+          totalDuration = recordingDuration;
+        } else if (recordingUnit === "minutes") {
+          totalDuration = recordingDuration * 60;
+        } else if (recordingUnit === "hours") {
+          totalDuration = recordingDuration * 3600;
+        } 
+        // If "manual", totalDuration will remain 0 => no auto stop
 
-      if (totalDuration > 0) {
-        recordingTimeoutRef.current = setTimeout(() => {
-          mediaRecorderRef.current.stop();
-          setIsRecording(false);
-          setStatus("Recording stopped after time limit.");
-
-          setTimeout(() => {
-            if (recordedChunks.length > 0) {
-              const webmBlob = new Blob(recordedChunks, {
-                type: mediaRecorderRef.current.mimeType,
-              });
-              processRecording(webmBlob);
-              setRecordedChunks([]);
+        if (totalDuration > 0) {
+          recordingTimeoutRef.current = setTimeout(async () => {
+            try {
+              await axios.post('http://localhost:3001/stop-recording');
+              setStatus("Recording stopped after time limit.");
+              setIsRecording(false);
+            } catch (error) {
+              console.error("Error stopping recording after timeout:", error);
+              setStatus(`Error stopping recording: ${error.message}`);
             }
-          }, 200);
-        }, totalDuration * 1000);
+          }, totalDuration * 1000);
+        }
+      } catch (error) {
+        console.error("Error starting recording:", error);
+        setStatus(`Error starting recording: ${error.message}`);
       }
     }
   };
 
-  // ----------------------------------
-  //   CONVERSION (WEBM -> MP3)
-  // ----------------------------------
-  const processRecording = async (webmBlob) => {
-    setIsConverting(true);
-    setStatus("Converting to MP3...");
-
-    try {
-      const arrayBuffer = await webmBlob.arrayBuffer();
-      const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
-
-      // Convert to MP3 (requires lamejs)
-      const mp3Blob = await convertToMp3(audioBuffer);
-      downloadBlob(mp3Blob, "mp3");
-      setStatus("Recording downloaded as MP3.");
-    } catch (error) {
-      console.error("Conversion error:", error);
-      setStatus("Error converting to MP3. Downloading original WEBM.");
-      downloadBlob(webmBlob, "webm");
-    } finally {
-      setIsConverting(false);
-    }
-  };
-
-  const convertToMp3 = async (audioBuffer) => {
-    if (typeof window.lamejs === "undefined") {
-      throw new Error("lamejs not loaded");
-    }
-
-    const channelData = audioBuffer.getChannelData(0); // mono
-    const sampleRate = audioBuffer.sampleRate;
-
-    const mp3Encoder = new window.lamejs.Mp3Encoder(1, sampleRate, 128);
-    const sampleBlockSize = 1152;
-    const mp3Data = [];
-
-    let i = 0;
-    while (i < channelData.length) {
-      const sampleChunk = channelData.subarray(i, i + sampleBlockSize);
-      const mp3buf = mp3Encoder.encodeBuffer(float32ToInt16(sampleChunk));
-      if (mp3buf.length > 0) {
-        mp3Data.push(mp3buf);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
       }
-      i += sampleBlockSize;
-    }
-
-    const end = mp3Encoder.flush();
-    if (end.length > 0) {
-      mp3Data.push(end);
-    }
-
-    return new Blob(mp3Data, { type: "audio/mp3" });
-  };
-
-  const float32ToInt16 = (float32Array) => {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    return int16Array;
-  };
-
-  const downloadBlob = (blob, extension) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    a.href = url;
-    a.download = `recording_${timestamp}.${extension}`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    };
+  }, []);
 
   // ----------------------------------
   //         RENDER
@@ -510,11 +408,15 @@ const Player = () => {
 
         <div className="text-center text-white/50 text-sm px-4">
           <p>{status}</p>
-          {isConverting && <p className="mt-1">Converting... Please wait</p>}
         </div>
       </div>
 
-      {/* Hidden audio element (for playback & recording) */}
+      {/* Recordings List */}
+      <div className="w-full max-w-xl mx-auto flex flex-col items-center mt-6">
+        <RecordingsList />
+      </div>
+
+      {/* Hidden audio element (for playback) */}
       <audio
         ref={audioRef}
         preload="auto"

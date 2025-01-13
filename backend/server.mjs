@@ -1,75 +1,110 @@
-import express from "express";
-import fetch from "node-fetch";
-import fs from "fs";
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs';
+import path from 'path';
+import ffmpeg from 'fluent-ffmpeg';
+import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Radio stream URL
-const RADIO_STREAM_URL = "https://n10.radiojar.com/8s5u5tpdtwzuv.mp3";
+// Get __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// Basic test route for server health check
-app.get("/", (req, res) => {
-  console.log("Root route accessed");
-  res.send("Server is working!");
-});
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// Proxy endpoint
-app.get("/proxyStream", async (req, res) => {
-  console.log("Received request for /proxyStream");
+// Directory to save recordings
+const recordingsDir = path.join(__dirname, 'recordings');
+if (!fs.existsSync(recordingsDir)) {
+  fs.mkdirSync(recordingsDir);
+}
+
+// In-memory storage for active recordings
+let activeRecording = null;
+
+// Endpoint to start recording
+app.post('/start-recording', async (req, res) => {
+  if (activeRecording) {
+    return res.status(400).json({ message: 'Recording is already in progress.' });
+  }
+
+  const streamUrl = 'https://n10.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABk-06_7wAAb2D9o5zdb4y4A';
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const outputPath = path.join(recordingsDir, `recording_${timestamp}.mp3`);
+
   try {
-    console.log(`Attempting to fetch from: ${RADIO_STREAM_URL}`);
-    const response = await fetch(RADIO_STREAM_URL);
-
+    // Fetch the audio stream
+    const response = await fetch(streamUrl);
     if (!response.ok) {
-      console.error(`Failed to fetch the radio stream. Status: ${response.status}`);
-      res.status(500).send(`Failed to fetch radio stream. Status: ${response.status}`);
-      return;
+      throw new Error(`Failed to fetch stream: ${response.statusText}`);
     }
 
-    console.log("Stream fetched successfully. Preparing to pipe the response.");
-    
-    // Set response headers for CORS and streaming
-    res.set("Access-Control-Allow-Origin", "*");
-    res.set("Content-Type", response.headers.get("Content-Type") || "audio/mpeg");
+    // Initialize FFmpeg to record and convert to MP3
+    const command = ffmpeg(response.body)
+      .inputFormat('mp3')
+      .audioCodec('libmp3lame')
+      .audioBitrate(128)
+      .format('mp3')
+      .save(outputPath)
+      .on('start', () => {
+        console.log('Recording started...');
+        activeRecording = { command, outputPath };
+      })
+      .on('error', (err) => {
+        console.error('Recording error:', err);
+        activeRecording = null;
+      })
+      .on('end', () => {
+        console.log('Recording ended.');
+        activeRecording = null;
+      });
 
-    // Pipe the stream directly to the response
-    response.body.pipe(res);
-
-    console.log("Streaming started.");
+    res.json({ message: 'Recording started.' });
   } catch (error) {
-    console.error("Error while proxying the stream:", error);
-    res.status(500).send("Unable to fetch radio stream.");
+    console.error('Error starting recording:', error);
+    res.status(500).json({ message: 'Failed to start recording.', error: error.message });
   }
 });
 
-// Route to serve a static file for debugging
-app.get("/testStream", (req, res) => {
-  console.log("Serving static MP3 file for debugging.");
-  const testFilePath = "./test.mp3";
-
-  // Check if the file exists
-  if (!fs.existsSync(testFilePath)) {
-    console.error("Static file not found: test.mp3");
-    res.status(404).send("Static MP3 file not found.");
-    return;
+// Endpoint to stop recording
+app.post('/stop-recording', (req, res) => {
+  if (!activeRecording) {
+    return res.status(400).json({ message: 'No active recording to stop.' });
   }
 
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Content-Type", "audio/mpeg");
-  const readStream = fs.createReadStream(testFilePath);
+  activeRecording.command.kill('SIGINT');
+  activeRecording = null;
+  res.json({ message: 'Recording stopped.' });
+});
 
-  readStream.on("open", () => {
-    console.log("Static MP3 file streaming started.");
-    readStream.pipe(res);
-  });
+// Endpoint to list recordings
+app.get('/recordings', (req, res) => {
+  fs.readdir(recordingsDir, (err, files) => {
+    if (err) {
+      return res.status(500).json({ message: 'Failed to list recordings.', error: err.message });
+    }
 
-  readStream.on("error", (err) => {
-    console.error("Error streaming static file:", err);
-    res.status(500).send("Error streaming static file.");
+    const recordings = files
+      .filter((file) => file.endsWith('.mp3'))
+      .map((file) => ({
+        name: file,
+        url: `http://localhost:${PORT}/recordings/${file}`,
+      }));
+
+    res.json({ recordings });
   });
 });
 
+// Serve recordings statically
+app.use('/recordings', express.static(recordingsDir));
+
+// Start the server
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
