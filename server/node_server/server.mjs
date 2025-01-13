@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const environment = process.env.ENVIRONMENT || "development";
-const PORT = process.env.PORT || 3001;
+const PORT = 3001;
 const FRONTEND_URLS = environment === "production"
   ? [process.env.FRONTEND_PROD_URL]
   : [process.env.FRONTEND_DEV_URL, "http://localhost:5173"];
