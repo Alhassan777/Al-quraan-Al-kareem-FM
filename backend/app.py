@@ -145,11 +145,9 @@ def main():
         # Start the Flask server with SocketIO support
         logger.info("Starting Flask server with SocketIO...")
 
-        port = int(os.getenv("PORT", 5000))  # Use the PORT environment variable
         socketio.run(
             app,
             debug=False,            # Set to False in production
-            port=port,
             allow_unsafe_werkzeug=False,  # Remove or set to False in production
             use_reloader=False    # Disable reloader if using SocketIO
         )
