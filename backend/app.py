@@ -9,6 +9,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO
 from flask_migrate import Migrate
 from threading import Thread
+
 # Import Blueprints
 from routes.schedule import schedule_bp
 from routes.playlists import playlist_bp
@@ -46,6 +47,10 @@ if ENVIRONMENT == "production":
 else:
     FRONTEND_URL = FRONTEND_DEV_URL
     BACKEND_URL = BACKEND_DEV_URL
+
+# Ensure BACKEND_URL is set
+if not BACKEND_URL:
+    BACKEND_URL = "http://localhost:5000"  # Default value or raise an error
 
 ########################################################
 # 2. Configure Logging
@@ -147,43 +152,39 @@ def run_telegram_listener(socketio, app):
         logger.error(f"Telegram listener encountered an error: {e}")
 
 ########################################################
-# 7. Main Function
+# 7. Initialize and Configure the App Globally
 ########################################################
-def main():
-    """Main application entry point."""
+# Create the Flask app instance globally for Gunicorn
+app = create_app()
+
+# Initialize databases
+initialize_databases(app)
+
+# Get SocketIO instance
+socketio = app.config.get("SOCKETIO")
+if not socketio:
+    logger.error("SocketIO instance is not available.")
+    raise RuntimeError("SocketIO instance is not available.")
+
+# Start Telegram listener thread
+telegram_thread = Thread(target=run_telegram_listener, args=(socketio, app), daemon=True)
+telegram_thread.start()
+logger.info("Telegram listener thread started.")
+
+########################################################
+# 8. Entry Point for Development
+########################################################
+if __name__ == "__main__":
     try:
-        app = create_app()
-        initialize_databases(app)
-
-        # Get SocketIO instance
-        socketio = app.config.get("SOCKETIO")
-        if not socketio:
-            raise RuntimeError("SocketIO instance is not available.")
-
-        # Start Telegram listener thread
-        telegram_thread = Thread(target=run_telegram_listener, args=(socketio, app), daemon=True)
-        telegram_thread.start()
-        logger.info("Telegram listener thread started.")
-
         # Start Flask-SocketIO server
         socketio.run(
             app,
             host="0.0.0.0",
-            port=5000,
+            port=int(os.environ.get("PORT", 5000)),
             debug=(ENVIRONMENT != "production"),  # Debug mode only in non-production
             allow_unsafe_werkzeug=False,
             use_reloader=False,
         )
-    except Exception as e:
-        logger.error(f"Application failed to start: {e}")
-        raise
-
-########################################################
-# 8. Entry Point
-########################################################
-if __name__ == "__main__":
-    try:
-        main()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Shutting down gracefully...")
     except Exception as e:

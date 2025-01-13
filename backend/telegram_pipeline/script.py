@@ -25,7 +25,6 @@ BACKEND_URL = BACKEND_PROD_URL if ENVIRONMENT == "production" else BACKEND_DEV_U
 # Log the backend URL for debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.info(f"BACKEND_URL from environment: {BACKEND_URL}")
 
 # Decode Base64 session and save it as a file
 SESSION_FILE_NAME = 'telegram_session.session'
