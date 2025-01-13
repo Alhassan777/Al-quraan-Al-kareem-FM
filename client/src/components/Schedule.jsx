@@ -35,7 +35,8 @@ export default function Schedule() {
     // Initialize Socket.IO client with WebSocket transport
     const newSocket = io(BASE_URL, {
       transports: ["websocket"], // Force WebSocket transport
-      withCredentials: true,     // Ensure cookies are sent with the connection
+      withCredentials: true,
+      rejectUnauthorized: false,     // Ensure cookies are sent with the connection
     });
     setSocket(newSocket);
 
