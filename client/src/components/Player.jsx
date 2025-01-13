@@ -1,272 +1,243 @@
-// Player.jsx
+// src/components/Player.jsx
 
 import React, { useState, useRef, useEffect } from "react";
+import axios from "axios";
 import { Play, Pause, Mic, StopCircle } from "lucide-react";
-import axios from "axios"; // Ensure axios is installed: npm install axios
+import { v4 as uuidv4 } from "uuid";
+import AudioBars from "./AudioBars";
+import VolumeSlider from "./VolumeSlider";
 
-// ----------------------------------------------------------------
-//  VolumeSlider component
-// ----------------------------------------------------------------
-const VolumeSlider = ({ volume, onVolumeChange }) => {
-  const [status, setStatus] = useState("تعديل مستوي الصوت");
+const VolumeSliderComponent = VolumeSlider;
 
-  const handleVolumeChange = (e) => {
-    const newVolume = Number(e.target.value); // 0–100
-    onVolumeChange(newVolume);
-
-    if (newVolume === 0) {
-      setStatus("تم كتم الصوت.");
-    } else {
-      setStatus(`تم تعديل مستوى الصوت إلى ${newVolume}%.`);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    e.preventDefault();
-    const step = 5; // Adjust step as needed
-    let newVolume = volume;
-
-    switch (e.key) {
-      case "ArrowRight":
-      case "ArrowUp":
-        newVolume = Math.min(volume + step, 100);
-        break;
-      case "ArrowLeft":
-      case "ArrowDown":
-        newVolume = Math.max(volume - step, 0);
-        break;
-      default:
-        return;
-    }
-
-    onVolumeChange(newVolume);
-    if (newVolume === 0) {
-      setStatus("تم كتم الصوت.");
-    } else {
-      setStatus(`تم تعديل مستوى الصوت إلى ${newVolume}%.`);
-    }
-  };
-
-  return (
-    <div className="bg-[#112436] p-6 rounded-lg shadow-md text-[#C4A661] w-full max-w-md">
-      <input
-        dir="ltr"
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        value={volume}
-        onChange={handleVolumeChange}
-        onKeyDown={handleKeyDown}
-        className="w-full h-2 bg-[#C4A661]/20 rounded-full appearance-none cursor-pointer"
-        style={{
-          background: `linear-gradient(to right, #C4A661 ${volume}%, rgba(196, 166, 97, 0.2) ${volume}%)`,
-        }}
-      />
-      <div className="status p-3 rounded-md mt-4 text-lg shadow-md bg-[#112436]">
-        <p>{status}</p>
-      </div>
-    </div>
-  );
+// Utility to persist user IDs
+const getUserId = () => {
+  let userId = localStorage.getItem("userId");
+  if (!userId) {
+    userId = `user_${uuidv4()}`;
+    localStorage.setItem("userId", userId);
+  }
+  return userId;
 };
 
-// ----------------------------------------------------------------
-//  RecordingsList component
-// ----------------------------------------------------------------
-const RecordingsList = () => {
-  const [recordings, setRecordings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const fetchRecordings = async () => {
-    try {
-      const response = await axios.get("http://localhost:3001/recordings");
-      setRecordings(response.data.recordings);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRecordings();
-    const interval = setInterval(fetchRecordings, 60000); // Refresh every minute
-    return () => clearInterval(interval);
-  }, []);
-
-  if (loading)
-    return <p className="text-white">Loading recordings...</p>;
-  if (error)
-    return <p className="text-red-500">Error: {error}</p>;
-
-  return (
-    <div className="bg-[#112436] p-4 rounded-lg shadow-md w-full max-w-md">
-      <h2 className="text-[#C4A661] text-lg mb-2">Available Recordings</h2>
-      {recordings.length === 0 ? (
-        <p className="text-white">No recordings available.</p>
-      ) : (
-        <ul>
-          {recordings.map((rec) => (
-            <li key={rec.name} className="flex justify-between items-center mb-2">
-              <span className="text-white">{rec.name.replace(".mp3", "")}</span>
-              <a
-                href={rec.url}
-                download
-                className="text-[#C4A661] hover:underline"
-              >
-                Download
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
-// ----------------------------------------------------------------
-//  Player component
-// ----------------------------------------------------------------
 const Player = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [status, setStatus] = useState("Ready to play");
-  const [volume, setVolume] = useState(1); // Normalized volume (0–1)
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [status, setStatus] = useState("جاهز للتشغيل"); // <== CHANGE (Arabic)
+  const [volume, setVolume] = useState(50);
 
-  // Recording duration and unit
+  // Recording duration & unit
   const [recordingDuration, setRecordingDuration] = useState(10);
-  const [recordingUnit, setRecordingUnit] = useState("seconds"); 
-  // "seconds" | "minutes" | "hours" | "manual"
+  const [recordingUnit, setRecordingUnit] = useState("seconds");
 
-  // Visual indicators
   const [streamingBlink, setStreamingBlink] = useState(false);
   const [recordingFlip, setRecordingFlip] = useState(false);
 
-  // Refs
-  const audioRef = useRef(null);
   const recordingTimeoutRef = useRef(null);
+  const isRecordingRef = useRef(false);
 
-  // The direct streaming URL
-  const streamUrl = "https://n10.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABk-06_7wAAb2D9o5zdb4y4A";
-
-  // ----------------------------------
-  //   EFFECT: Blinking (Streaming)
-  // ----------------------------------
+  // Keep isRecordingRef in sync
   useEffect(() => {
-    let intervalId;
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  const userId = useRef(getUserId());
+
+  // Adjust accordingly
+  const backendUrl =
+    import.meta.env.VITE_TESTING_MODE === "TRUE"
+      ? import.meta.env.VITE_NODE_DEV_URL
+      : import.meta.env.VITE_NODE_PROD_URL;
+
+  const fallbackStreamUrl = import.meta.env.VITE_FALLBACK_STREAM_URL;
+  const [streamUrl, setStreamUrl] = useState(fallbackStreamUrl);
+  const [visualizationActive, setVisualizationActive] = useState(false);
+
+  // Fetch stream URL
+  useEffect(() => {
+    const fetchStreamUrl = async () => {
+      try {
+        const response = await axios.get(`${backendUrl}/status`);
+        if (response.data && response.data.streamUrl) {
+          setStreamUrl(response.data.streamUrl);
+        } else {
+          console.warn("Stream URL not available from backend. Using fallback.");
+        }
+      } catch (error) {
+        console.error("Error fetching stream URL:", error);
+        setStatus("تعذر جلب رابط البث. سيتم استخدام الرابط الاحتياطي.");
+      }
+    };
+    fetchStreamUrl();
+  }, [backendUrl]);
+
+  // Streaming blink effect
+  useEffect(() => {
+    let interval;
     if (isPlaying) {
-      intervalId = setInterval(() => {
+      interval = setInterval(() => {
         setStreamingBlink((prev) => !prev);
       }, 500);
     } else {
       setStreamingBlink(false);
     }
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (interval) clearInterval(interval);
     };
   }, [isPlaying]);
 
-  // ----------------------------------
-  //   EFFECT: Flip Animation (REC)
-  // ----------------------------------
+  // Recording flip effect
   useEffect(() => {
     if (isRecording) {
       setRecordingFlip(true);
-      const timer = setTimeout(() => {
-        setRecordingFlip(false);
-      }, 300);
+      const timer = setTimeout(() => setRecordingFlip(false), 300);
       return () => clearTimeout(timer);
     }
   }, [isRecording]);
 
-  // ----------------------------------
-  //   DERIVED IMAGE PATHS
-  // ----------------------------------
-  const streamingSrc = isPlaying
-    ? streamingBlink
-      ? "Streaming On.png"
-      : "Streaming Off.png"
-    : "Streaming Off.png";
-  const recordingSrc = isRecording ? "Recording On.png" : "Recording Off.png";
-
-  // ----------------------------------
-  //   HANDLERS
-  // ----------------------------------
+  // ========== PLAY/PAUSE LOGIC ==========
   const togglePlayPause = async () => {
-    try {
-      if (!audioRef.current) return;
+    if (isProcessing) return;
+    setIsProcessing(true);
 
+    try {
       if (isPlaying) {
-        // Pause
-        audioRef.current.pause();
-        setStatus("Playback paused");
+        try {
+          await axios.post(`${backendUrl}/stop-stream`, {
+            userId: userId.current,
+          });
+        } catch (stopErr) {
+          console.error("Failed to stop stream on server:", stopErr);
+        }
+        setVisualizationActive(false);
+        setStatus("تم إيقاف العرض المرئي");
         setIsPlaying(false);
       } else {
-        // Set the stream URL and ensure audio element reloads
-        audioRef.current.src = streamUrl;
-        audioRef.current.load();
-
-        // Now try playing
-        await audioRef.current.play();
-        audioRef.current.volume = volume;
-        
-        setStatus("Playing stream");
-        setIsPlaying(true);
+        const response = await axios.post(`${backendUrl}/stream/start-stream`, {
+          userId: userId.current,
+        });
+        if (response.data && response.data.success) {
+          setVisualizationActive(true);
+          setStatus("تم بدء العرض المرئي");
+          setIsPlaying(true);
+        } else {
+          throw new Error("فشل بدء العرض المرئي");
+        }
       }
     } catch (error) {
-      console.error("Playback error:", error);
-      setStatus(`Playback error: ${error.message}`);
+      console.error("Visualization error:", error);
+      setStatus(`خطأ: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  // Start/stop recording via server
-  const toggleRecording = async () => {
-    if (isRecording) {
-      // Stop recording
-      try {
-        await axios.post('http://localhost:3001/stop-recording');
-        setStatus("Recording stopped.");
-        setIsRecording(false);
-        clearTimeout(recordingTimeoutRef.current);
-      } catch (error) {
-        console.error("Error stopping recording:", error);
-        setStatus(`Error stopping recording: ${error.message}`);
-      }
-    } else {
-      // Start recording
-      try {
-        await axios.post('http://localhost:3001/start-recording');
-        setStatus("Recording started.");
-        setIsRecording(true);
-
-        // Compute total recording time based on unit
-        let totalDuration = 0;
-        if (recordingUnit === "seconds") {
-          totalDuration = recordingDuration;
-        } else if (recordingUnit === "minutes") {
-          totalDuration = recordingDuration * 60;
-        } else if (recordingUnit === "hours") {
-          totalDuration = recordingDuration * 3600;
-        } 
-        // If "manual", totalDuration will remain 0 => no auto stop
-
-        if (totalDuration > 0) {
-          recordingTimeoutRef.current = setTimeout(async () => {
-            try {
-              await axios.post('http://localhost:3001/stop-recording');
-              setStatus("Recording stopped after time limit.");
-              setIsRecording(false);
-            } catch (error) {
-              console.error("Error stopping recording after timeout:", error);
-              setStatus(`Error stopping recording: ${error.message}`);
-            }
-          }, totalDuration * 1000);
+  // ========== START RECORDING ==========
+  const startRecording = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await axios.post(
+        `${backendUrl}/start-recording`,
+        {},
+        {
+          withCredentials: true,
+          headers: {
+            "X-User-ID": userId.current,
+          },
         }
-      } catch (error) {
-        console.error("Error starting recording:", error);
-        setStatus(`Error starting recording: ${error.message}`);
+      );
+      setStatus(response.data.message || "تم بدء التسجيل");
+      setIsRecording(true);
+
+      if (recordingUnit !== "manual") {
+        if (recordingTimeoutRef.current) {
+          clearTimeout(recordingTimeoutRef.current);
+        }
+        let totalSecs = 0;
+        switch (recordingUnit) {
+          case "seconds":
+            totalSecs = recordingDuration;
+            break;
+          case "minutes":
+            totalSecs = recordingDuration * 60;
+            break;
+          case "hours":
+            totalSecs = recordingDuration * 3600;
+            break;
+          default:
+            totalSecs = 0;
+        }
+
+        if (totalSecs > 0) {
+          recordingTimeoutRef.current = setTimeout(() => {
+            if (isRecordingRef.current) {
+              stopRecording();
+            }
+          }, totalSecs * 1000);
+        }
       }
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message;
+      setStatus(`خطأ في بدء التسجيل: ${errorMsg}`);
+      setIsRecording(false);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ========== STOP RECORDING ==========
+  const stopRecording = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await axios.post(
+        `${backendUrl}/stop-recording`,
+        {},
+        {
+          withCredentials: true,
+          responseType: "blob",
+          headers: {
+            "X-User-ID": userId.current,
+          },
+        }
+      );
+      if (!response.data || response.data.size === 0) {
+        throw new Error("لم يتم استلام أي بيانات تسجيل");
+      }
+
+      setStatus("تم إيقاف التسجيل وجاهز للتنزيل");
+      setIsRecording(false);
+
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+        recordingTimeoutRef.current = null;
+      }
+
+      const blob = new Blob([response.data], { type: "audio/mpeg" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const filename = `recording_${new Date().toISOString()}.mp3`;
+
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      const errorMsg = error.response?.data?.message || error.message;
+      setStatus(`خطأ في إيقاف التسجيل: ${errorMsg}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ========== TOGGLE RECORDING ==========
+  const toggleRecording = () => {
+    if (isProcessing) return;
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
     }
   };
 
@@ -279,107 +250,142 @@ const Player = () => {
     };
   }, []);
 
-  // ----------------------------------
-  //         RENDER
-  // ----------------------------------
   return (
-    <div className="bg-[#1a2b47] w-full min-h-screen flex flex-col items-center justify-between py-6 px-4">
-      <style jsx>{`
-        .flip-animation {
-          animation: flip 0.3s forwards;
-        }
-        @keyframes flip {
-          0% {
-            transform: rotateY(0);
+    <div className="bg-[#1a2b47] w-full min-h-screen flex flex-col items-center py-6 px-4">
+      {/* =====================================
+          Arabic text + Removing old "Currently Broadcasting" text
+          ===================================== */}
+      <style>
+        {`
+          .flip-animation {
+            animation: flip 0.3s forwards;
           }
-          50% {
-            transform: rotateY(90deg);
+          @keyframes flip {
+            0% {
+              transform: rotateY(0);
+            }
+            50% {
+              transform: rotateY(90deg);
+            }
+            100% {
+              transform: rotateY(180deg);
+            }
           }
-          100% {
-            transform: rotateY(180deg);
-          }
-        }
-      `}</style>
+        `}
+      </style>
 
-      {/* Header / Logo */}
+      {/* Logo / Title */}
       <div className="flex flex-col items-center mt-4">
         <img
           src="/logo.png"
-          alt="Station Logo"
+          alt="شعار المحطة"
           className="w-32 h-32 object-contain mb-4"
         />
-        <div className="text-center mb-6">
-          <p className="text-xl text-white mb-1">يتم الآن عرض برنامج</p>
-          <p className="text-lg text-[#C4A661]">من حدائق الايمان</p>
-        </div>
+        {/* <== Remove "Currently Broadcasting..." and "From Gardens of Faith" */}
+      </div>
 
-        {/* Playback & Recording Controls */}
-        <div className="flex items-center justify-center space-x-10">
-          {/* Play / Pause */}
-          <button
-            onClick={togglePlayPause}
-            className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-          >
-            {isPlaying ? (
-              <Pause size={28} className="text-white" />
-            ) : (
-              <Play size={28} className="text-white" />
-            )}
-          </button>
+      {/* Waveform Visualization */}
+      <div className="w-full max-w-md mt-2"> {/* <== SHIFTED DOWN A BIT */}
+        {isPlaying && <AudioBars streamUrl={streamUrl} active={visualizationActive} />}
+        {!isPlaying && (
+          <div className="w-full h-80 bg-[#001f3f] rounded-lg flex items-center justify-center">
+            <p className="text-white/50">اضغط تشغيل لرؤية الموجات</p>
+          </div>
+        )}
+      </div>
 
-          {/* Record / Stop */}
-          <button
-            onClick={toggleRecording}
-            className="w-14 h-14 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-          >
-            {isRecording ? (
-              <StopCircle size={28} className="text-white" />
-            ) : (
-              <Mic size={28} className="text-white" />
-            )}
-          </button>
-        </div>
+      {/* Playback & Recording Controls */}
+      <div className="flex items-center justify-center space-x-10 mt-6 relative">
+  {/* Play / Pause Button */}
+  <div className="relative group">
+    <button
+      onClick={togglePlayPause}
+      className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
+        isPlaying ? "bg-blue-500 hover:bg-blue-600"  : "bg-green-500 hover:bg-green-600"
+      }`}
+      disabled={isProcessing}
+    >
+      {isPlaying ? (
+        <Pause size={28} className="text-white" />
+      ) : (
+        <Play size={28} className="text-white" />
+      )}
+    </button>
+    {/* Tooltip */}
+    <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      {isPlaying ? "إيقاف التشغيل" : "تشغيل الصوت"}
+    </div>
+  </div>
 
-        {/* Volume Slider & Recording Duration */}
-        <div className="flex flex-col items-center mt-8 space-y-6 w-full">
-          <VolumeSlider
-            volume={Math.round(volume * 100)}
-            onVolumeChange={(newVolume) => {
-              const normalized = newVolume / 100;
-              setVolume(normalized);
-              if (audioRef.current) {
-                audioRef.current.volume = normalized;
-              }
-            }}
-          />
+  {/* Record / Stop Button */}
+  <div className="relative group">
+    <button
+      onClick={toggleRecording}
+      className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
+        isRecording
+          ? "bg-red-500 hover:bg-red-600"
+          : "bg-white/10 hover:bg-white/20"
+      }`}
+      disabled={isProcessing}
+    >
+      {isRecording ? (
+        <StopCircle size={28} className="text-white" />
+      ) : (
+        <Mic size={28} className="text-white" />
+      )}
+    </button>
+    {/* Tooltip */}
+    <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+      {isRecording ? "إيقاف التسجيل" : "بدء التسجيل"}
+    </div>
+  </div>
+</div>
 
-          {/* --------------------------------------------- */}
-          {/*     Recording Duration / Manual Stop Picker    */}
-          {/* --------------------------------------------- */}
-          <div className="flex flex-col items-center bg-[#112436] p-4 rounded shadow-md">
-            <label className="text-sm text-white/70 mb-2">اختيار مدة التسجيل</label>
-            
+      {/* Volume Slider & Recording Duration */}
+      {/* <== CHANGE: Added a border or partition for aesthetic */}
+      <div className="flex flex-col items-center mt-8 space-y-6 w-full">
+        <div className="w-full max-w-md bg-[#112436] p-4 rounded shadow-md">
+          {/* Volume */}
+          <div className="mb-5">
+            <label className="block text-white/70 text-center mb-2">
+              مستوى الصوت: {volume} {/* <== "Volume set to" in Arabic */}
+            </label>
+            <VolumeSliderComponent
+              volume={volume}
+              onVolumeChange={(newVolume) => {
+                setVolume(newVolume);
+              }}
+            />
+          </div>
+
+          {/* Recording Duration & Unit */}
+          <hr className="border-t border-white/20 my-4" />{/* <== Partition */}
+          <div className="flex flex-col items-center">
+            <label className="text-sm text-white/70 mb-2">مدة التسجيل</label>
             <div className="flex items-center space-x-2">
-              {/* Numeric input for the duration */}
-              <input
-                type="number"
-                min="1"
-                value={recordingDuration}
-                onChange={(e) => setRecordingDuration(parseInt(e.target.value, 10))}
-                className="w-16 text-center text-white bg-white/10 border border-white/20 rounded"
-                disabled={recordingUnit === "manual"}
-              />
-
-              {/* Dropdown to choose unit */}
+              {/* <== Hide input if "manual" */}
+              {recordingUnit !== "manual" && (
+                <input
+                  type="number"
+                  min="1"
+                  value={recordingDuration}
+                  onChange={(e) =>
+                    setRecordingDuration(parseInt(e.target.value, 10) || 1)
+                  }
+                  className="w-16 text-center text-white bg-white/10 border border-white/20 rounded"
+                  disabled={isRecording} // <== SUGGESTION: user not allowed to change mid-record
+                />
+              )}
               <select
                 value={recordingUnit}
                 onChange={(e) => setRecordingUnit(e.target.value)}
                 className="text-white bg-white/10 border border-white/20 rounded px-2"
+                disabled={isRecording} // <== Disallow changes while recording
               >
-                <option value="seconds">ثواني</option>
+                <option value="manual">يدوي</option>
+                <option value="seconds">ثوانٍ</option>
                 <option value="minutes">دقائق</option>
                 <option value="hours">ساعات</option>
-                <option value="manual">يدويًا</option>
               </select>
             </div>
           </div>
@@ -392,38 +398,33 @@ const Player = () => {
           {/* Recording Indicator */}
           <div className="flex items-center space-x-3">
             <img
-              src={recordingSrc}
+              src={isRecording ? "/Recording On.png" : "/Recording Off.png"}
               alt="Recording"
               className={`w-6 h-6 ${recordingFlip ? "flip-animation" : ""}`}
             />
-            <span className="text-sm text-white/70">REC</span>
+            <span className="text-sm text-white/70">تسجيل</span>
           </div>
 
           {/* Streaming Indicator */}
           <div className="flex items-center space-x-3">
-            <img src={streamingSrc} alt="Live" className="w-6 h-6" />
-            <span className="text-sm text-white/70">LIVE</span>
+            <img
+              src={
+                isPlaying
+                  ? streamingBlink
+                    ? "/Streaming On.png"
+                    : "/Streaming Off.png"
+                  : "/Streaming Off.png"
+              }
+              alt="Live"
+              className="w-6 h-6"
+            />
+            <span className="text-sm text-white/70">بث مباشر</span>
           </div>
         </div>
-
         <div className="text-center text-white/50 text-sm px-4">
           <p>{status}</p>
         </div>
       </div>
-
-      {/* Recordings List */}
-      <div className="w-full max-w-xl mx-auto flex flex-col items-center mt-6">
-        <RecordingsList />
-      </div>
-
-      {/* Hidden audio element (for playback) */}
-      <audio
-        ref={audioRef}
-        preload="auto"
-        crossOrigin="anonymous"
-        type="audio/mpeg"
-        className="hidden"
-      />
     </div>
   );
 };

@@ -30,7 +30,8 @@
     "shadcn-ui": "^0.9.4",
     "socket.io-client": "^2.3.0",
     "tailwind-merge": "^2.6.0",
-    "wavesurfer.js": "^7.8.12"
+    "uuid": "^11.0.5",
+    "wavesurfer.js": "^7.8.16"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.25.9",

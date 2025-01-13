@@ -36,7 +36,6 @@ export default function Schedule() {
     const newSocket = io(BASE_URL, {
       transports: ["websocket"], // Force WebSocket transport
       withCredentials: true,
-      rejectUnauthorized: false,     // Ensure cookies are sent with the connection
     });
     setSocket(newSocket);
 

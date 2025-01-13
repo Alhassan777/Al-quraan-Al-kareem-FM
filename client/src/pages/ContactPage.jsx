@@ -2,7 +2,6 @@ import React from 'react';
 import ContactForm from "../components/ContactForm.jsx";
 import TimezoneDetector from '../components/TimezoneDetector.jsx'; // Ensure correct import path
 import Reminders from '../components/Reminders.jsx';
-
 export default function ContactPage() {
   return (
     <div className="min-h-screen bg-[#0A1828] text-[#C4A661] p-6">
