@@ -7,10 +7,11 @@ import Cookies from "js-cookie"; // Import js-cookie for cookie handling
 import { DateTime } from "luxon"; // Import Luxon for timezone conversion
 import TimezoneDetector from "./TimezoneDetector.jsx"; // Timezone detection component
 
-const TESTING = process.env.TESTING
-const BASE_URL = TESTING === "TRUE" ? process.env.NEXT_TESTING : process.env.NEXT_BACKEND_BASED_SERVER_URI;
+const TESTING_MODE = import.meta.env.VITE_TESTING_MODE
+const BASE_URL = TESTING_MODE === "TRUE" ? import.meta.env.VITE_TESTING : import.meta.env.VITE_BACKEND_BASED_SERVER_URI;
 
 export default function Schedule() {
+
   const [activeTab, setActiveTab] = useState("sheikhs"); // "sheikhs" or "programs"
   const [sheikhPrograms, setSheikhPrograms] = useState([]);
   const [programSchedule, setProgramSchedule] = useState([]);

@@ -72,7 +72,7 @@ def create_app():
     # Enable CORS for all routes with credentials
     CORS(
         app,
-        resources={r"/*": {"origins": "http://localhost:3000"}},  # Adjust for your frontend's origin
+        resources={r"/*": {"origins": "http://localhost:5173"}},  # Adjust for your frontend's origin
         supports_credentials=True,
     )
 
