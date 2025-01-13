@@ -1,8 +1,8 @@
-// src/components/VolumeSlider.jsx
-
 import React, { useState } from "react";
 
 const VolumeSlider = ({ volume, onVolumeChange }) => {
+  // Add a status state
+  const [status, setStatus] = useState("");
 
   const handleVolumeChange = (e) => {
     const newVolume = Number(e.target.value); // 0–100
@@ -28,6 +28,8 @@ const VolumeSlider = ({ volume, onVolumeChange }) => {
     }
 
     onVolumeChange(newVolume);
+
+    // Update the status
     if (newVolume === 0) {
       setStatus("Volume Muted.");
     } else {

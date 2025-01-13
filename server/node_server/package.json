@@ -15,7 +15,7 @@
     "uuid": "^11.0.5"
   },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "apt-get update && apt-get install -y ffmpeg && node server.mjs"
   },
   "engines": {
     "node": ">=18.x"

@@ -13,7 +13,6 @@ from schedule_parsing.parse_logic import (
     remove_brackets
 )
 from schedule_parsing.gemini_handler import (
-    # Removed process_schedule_with_gemini and strip_code_fences
     process_gemini_output,
     retry_gemini_request
 )
@@ -51,19 +50,38 @@ def parse_header_dates(raw_text: str) -> dict:
             }
     return {}
 
+############################
+# HELPER: parse_gregorian_date
+############################
+def parse_gregorian_date(date_string: str) -> datetime:
+    """
+    Extract only the DD/MM/YYYY portion from a mixed (Hijri + Gregorian) date string
+    and parse it as a Python datetime. Example input:
+      '09 رجب 1446هـ الوافق 09/01/2025'
+    which should yield a datetime for 2025-01-09.
+    
+    :param date_string: The raw string potentially containing a Gregorian date substring.
+    :return: A datetime object corresponding to the DD/MM/YYYY portion.
+    :raises ValueError: If no valid Gregorian date substring is found.
+    """
+    pattern = r"\d{2}/\d{2}/\d{4}"  # Looks for something like 09/01/2025
+    match = re.search(pattern, date_string)
+    if not match:
+        raise ValueError(f"Could not find a Gregorian date in '{date_string}'")
+
+    extracted_date_str = match.group(0)  # e.g. "09/01/2025"
+    return datetime.strptime(extracted_date_str, "%d/%m/%Y")
+
 # ------------------------ Helper Functions ------------------------
 def process_raw_text(raw_text):
     """
-    Processes raw schedule text using Gemini AI (with retry logic), 
+    Processes raw schedule text using Gemini AI (with retry logic),
     falling back to existing parsing logic if needed.
     
     Returns structured data in the format:
     {
         "schedule_date": "YYYY-MM-DD",
-        "final_schedule": [
-            {"الوقت": "06:00", "القارئ": "Name", "السورة": "Surah", "المدة": "Duration(optional)"},
-            ...
-        ]
+        "final_schedule": [...]
     }
     """
     logger.info("Starting processing of raw text.")
@@ -75,16 +93,12 @@ def process_raw_text(raw_text):
         logger.error("No valid Gregorian date found in the header.")
         raise ValueError("No valid date found in the header.")
 
-    # Clean the date string
-    cleaned_date_str = re.sub(r"[^0-9/]", "", date_str).strip()
-    logger.debug(f"Cleaned date string: '{cleaned_date_str}' (original was '{date_str}')")
-
-    # Parse the date
+    # Instead of manually "cleaning" the date string, use parse_gregorian_date
     try:
-        schedule_date = datetime.strptime(cleaned_date_str, "%d/%m/%Y").date()
+        schedule_date = parse_gregorian_date(date_str).date()
         logger.debug(f"Parsed schedule date: {schedule_date}")
     except ValueError as ve:
-        logger.error(f"Invalid date format in the header: '{cleaned_date_str}'. Error: {ve}")
+        logger.error(f"Invalid date format in the header: '{date_str}'. Error: {ve}")
         raise ValueError("Invalid date format in the header.")
 
     # Step 2: Try Gemini (with retries) and then finalize its output
@@ -202,8 +216,6 @@ def store_processed_data(processed_data):
 
 
 # ------------------------ Route Definitions ------------------------
-
-schedule_bp = Blueprint("schedule_bp", __name__)
 
 @schedule_bp.route("/all", methods=["GET"])
 def get_all_schedules():
@@ -339,10 +351,7 @@ def store_schedule():
     OR
     - Structured data: {
         "schedule_date": "YYYY-MM-DD",
-        "final_schedule": [
-            {"الوقت": "06:00", "القارئ": "Name", "السورة": "Surah", "المدة": "Optional"},
-            ...
-        ]
+        "final_schedule": [ ... ]
     }
     Returns a confirmation of successful storage.
     """
@@ -411,10 +420,10 @@ def store_schedule():
                 if not isinstance(entry, dict):
                     logger.warning(f"Schedule entry #{idx} is not a JSON object.")
                     return jsonify({"error": f"Schedule entry #{idx} is invalid."}), 400
-                if not all(k in entry for k in ("الوقت", "قارئ", "السورة")):
+                if not all(k in entry for k in ("الوقت", "القارئ", "السورة")):
                     logger.warning(f"Missing mandatory keys in schedule entry #{idx}.")
                     return jsonify({
-                        "error": f"Missing 'الوقت', 'قارئ', or 'السورة' in entry #{idx}."
+                        "error": f"Missing 'الوقت', 'القارئ', or 'السورة' in entry #{idx}."
                     }), 400
 
             logger.info(f"Storing schedule for date: {schedule_date}")
@@ -492,7 +501,7 @@ def store_schedule():
 @schedule_bp.route("/process_and_store", methods=["POST"])
 def process_and_store_schedule():
     """
-    Endpoint to process raw schedule text using Gemini AI (with retries) 
+    Endpoint to process raw schedule text using Gemini AI (with retries)
     or fallback logic, then store in the DB.
     """
     try:
