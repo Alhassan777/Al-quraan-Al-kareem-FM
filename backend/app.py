@@ -24,6 +24,11 @@ API_HASH = os.getenv("API_HASH")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 SERVER_URL = os.getenv("SERVER_URL")
 CLIENT_TESTING_URL=os.getenv("CLIENT_TESTING_URL")
+CLIENT_BASE_URL=os.getenv("CLIENT_BASE_URL")
+TESTING=os.getenv("TESTING")
+
+URL = CLIENT_TESTING_URL if TESTING== 'TRUE' else CLIENT_BASE_URL
+
 # Validate Environment Variables
 missing_vars = [
     var for var in ["API_ID", "API_HASH", "CHANNEL_USERNAME", "SERVER_URL"]
@@ -72,7 +77,7 @@ def create_app():
     # Enable CORS for all routes with credentials
     CORS(
         app,
-        resources={r"/*": {"origins": CLIENT_TESTING_URL}},  # Adjust for your frontend's origin
+        resources={r"/*": {"origins": URL}},  # Adjust for your frontend's origin
         supports_credentials=True,
     )
 
@@ -91,7 +96,7 @@ def create_app():
     migrate = Migrate(app, db)  # Optional: Use Flask-Migrate for database migrations
 
     # Initialize SocketIO
-    socketio = SocketIO(app, cors_allowed_origins=CLIENT_TESTING_URL)  
+    socketio = SocketIO(app, cors_allowed_origins=URL)  
     # For production, you may adjust to your domain or set to "*"
     app.config["SOCKETIO"] = socketio  # Store SocketIO instance in app config
 
