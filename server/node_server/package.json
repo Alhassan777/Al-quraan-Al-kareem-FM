@@ -1,4 +1,7 @@
 {
+  "name": "radio_server",
+  "version": "1.0.0",
+  "main": "server.mjs",
   "dependencies": {
     "axios": "^1.7.9",
     "cookie-parser": "^1.4.7",
@@ -10,5 +13,11 @@
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
     "uuid": "^11.0.5"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
