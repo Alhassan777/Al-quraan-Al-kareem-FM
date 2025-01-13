@@ -10,7 +10,6 @@ import Reminders from './components/Reminders.jsx';
 // Import Page Components
 import SchedulePage from './pages/SchedulePage.jsx';
 import ContactPage from './pages/ContactPage.jsx';
-import WaveformTest from './pages/WaveformTest.jsx'; // Import the WaveformTest component
 
 import './style/global.css';
 
@@ -57,7 +56,6 @@ export default function App() {
           />
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/contact" element={<ContactPage />} />
-          <Route path="/waveform-test" element={<WaveformTest />} /> {/* Add the WaveformTest route */}
         </Routes>
       </main>
     </div>

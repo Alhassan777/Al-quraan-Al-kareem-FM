@@ -2,20 +2,87 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="client/public/favicon.ico" />
+
+    <!-- Responsive viewport -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>اذاعة القرآن الكريم من القاهرة</title>
-    <!-- Optional: Include a stylesheet for RTL support -->
+
+    <!-- Primary Meta Tags -->
+    <title>إذاعة القرآن الكريم من القاهرة</title>
+    <meta 
+      name="description" 
+      content="إذاعة القرآن الكريم من القاهرة هي أعرق إذاعة قرآنية في المنطقة العربية. يتيح هذا الموقع إمكانية الاستماع للبث المباشر، البحث في برامج المحطة، وتسجيل المقاطع المفضلة بسهولة."
+    />
+    <meta name="keywords" 
+    content="عمالقة التلاوة, قراء مصر, إذاعة القرآن الكريم, القاهرة, بث مباشر, قرآن, تسجيل برامج, راديو, إسلاميات, إذاعة دينية, القرآن الكريم مباشر, تلاوات قرآنية, محطات إذاعية إسلامية, أشهر قراء القرآن, إذاعة القرآن أونلاين, برامج دينية, مقرئون عظماء, إذاعة مصرية, أذكار إسلامية, تسجيل التلاوات, القرآن الكريم بصوت جميل, برامج إذاعية دينية, جدول برامج إذاعة القرآن, منصات البث الإسلامي, القرآن الكريم للأطفال, دروس إسلامية, إذاعة إسلامية مصرية, تلاوة خاشعة, أعذب الأصوات في التلاوة, برامج الفجر الإسلامية, إذاعات مصر العريقة, قناة إذاعية قرآنية, البث الحي للقرآن, الراديو الإسلامي المباشر" />
+
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:title" content="إذاعة القرآن الكريم من القاهرة" />
+    <meta 
+      property="og:description" 
+      content="منصة تتيح الاستماع للبث المباشر، والبحث في برامج إذاعة القرآن الكريم من القاهرة، أعرق إذاعة قرآنية في الشرق الأوسط."
+    />
+    <meta property="og:type" content="website" />
+    <!-- JSON-LD Structured Data (Schema.org) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "إذاعة القرآن الكريم من القاهرة",
+      "description": "أعرق إذاعة قرآنية في مصر والشرق الأوسط، متخصصة في تلاوات القرآن الكريم وبرامج دينية متنوعة."
+    }
+    </script>
+
+    <!-- Optional: Include a stylesheet for RTL support or custom styling -->
     <style>
-      /* Optional: Ensure all elements inherit the RTL direction */
       body {
         direction: rtl;
         text-align: right;
+        margin: 0;
+        padding: 0;
+        font-family: sans-serif;
+        background-color: #f7f7f7;
+      }
+      main, article {
+        padding: 1rem;
+        max-width: 900px;
+        margin: 0 auto;
+        background-color: #fff;
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 1rem;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    
+    <!-- Main content for SEO indexing -->
+    <main>
+      <h1>إذاعة القرآن الكريم من القاهرة</h1>
+      <article>
+        <p>
+          هذا المشروع هو منصة بث مباشر لإذاعة القرآن الكريم من القاهرة، 
+          أقدم محطة إذاعية قرآنية في إفريقيا والشرق الأوسط. تحتل مكانة خاصة 
+          في هوية وذكريات كل مصري ومتحدث باللغة العربية. ونظرًا لافتقار المشرفين 
+          على الإذاعة للخبرة التقنية، فقد رأيت ضرورة سد هذه الفجوة وإنشاء منصة 
+          إلكترونية تتيح الوصول للبث بشكل سهل وحديث.
+        </p>
+        <p>
+          تتيح المنصة الاستماع إلى البث المباشر، عرض جدول البرامج اليومية مع 
+          إمكانية تخصيصه حسب التوقيت المحلي، بالإضافة إلى البحث في قاعدة بيانات 
+          شاملة لجميع مقرئي القرآن الكريم الذين مروا على المحطة عبر تاريخها. 
+          وتشمل المنصة أيضًا خصائص لتسجيل البرامج مفضلتك يدويًا أو تلقائيًا، 
+          مع تنبيهات ودية تشجع على الممارسات الإسلامية. صُممت هذه المنصة لتكون 
+          الوجهة الشاملة للبقاء على اتصال بتراث إذاعة القرآن الكريم وتلاواتها 
+          العريقة.
+        </p>
+      </article>
+    </main>
+
+    <!-- Your React entry point -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
