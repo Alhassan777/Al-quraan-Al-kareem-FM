@@ -25,7 +25,10 @@ CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 SERVER_URL = os.getenv("SERVER_URL")
 
 # Validate Environment Variables
-missing_vars = [var for var in ["API_ID", "API_HASH", "CHANNEL_USERNAME", "SERVER_URL"] if not os.getenv(var)]
+missing_vars = [
+    var for var in ["API_ID", "API_HASH", "CHANNEL_USERNAME", "SERVER_URL"]
+    if not os.getenv(var)
+]
 if missing_vars:
     raise ValueError(f"Missing environment variables: {', '.join(missing_vars)}")
 
@@ -88,7 +91,8 @@ def create_app():
     migrate = Migrate(app, db)  # Optional: Use Flask-Migrate for database migrations
 
     # Initialize SocketIO
-    socketio = SocketIO(app, cors_allowed_origins="http://localhost:3000")  # Adjust for your frontend's origin
+    socketio = SocketIO(app, cors_allowed_origins="http://localhost:3000")  
+    # For production, you may adjust to your domain or set to "*"
     app.config["SOCKETIO"] = socketio  # Store SocketIO instance in app config
 
     # Register Blueprints
@@ -124,9 +128,6 @@ def initialize_databases(app):
 def main():
     """Main application entry point."""
     try:
-        # Create and configure the application
-        app = create_app()
-
         # Initialize databases
         initialize_databases(app)
 
@@ -138,12 +139,14 @@ def main():
 
         # Start the Flask server with SocketIO support
         logger.info("Starting Flask server with SocketIO...")
+
+        port = int(os.getenv("PORT", 5000))  # Use the PORT environment variable
         socketio.run(
             app,
-            debug=True,  # Disable in production
-            port=5000,
+            debug=True,            # Set to False in production
+            port=port,
             allow_unsafe_werkzeug=True,  # Remove or set to False in production
-            use_reloader=False,  # Disable reloader if using SocketIO
+            use_reloader=False,    # Disable reloader if using SocketIO
         )
     except Exception as e:
         logger.error(f"Application failed to start: {str(e)}")
@@ -152,6 +155,8 @@ def main():
 ########################################################
 # 7. Entry Point
 ########################################################
+app = create_app()  # Create the app globally for WSGI servers
+
 if __name__ == "__main__":
     try:
         main()
