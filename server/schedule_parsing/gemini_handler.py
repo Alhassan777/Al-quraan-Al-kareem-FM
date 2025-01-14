@@ -7,6 +7,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from jsonschema import validate, ValidationError
 from datetime import datetime
+import dateparser
 
 # Load environment variables
 load_dotenv()
@@ -25,15 +26,18 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Define the prompt for Gemini
+# -----------------------------------------------------------------------------
+# PROMPT_TEMPLATE
+# -----------------------------------------------------------------------------
+# Updated prompt that explicitly requires the date in DD/MM/YYYY (Gregorian only)
 PROMPT_TEMPLATE = """
 You are a data assistant specialized in processing Arabic text data. I have a raw Arabic radio schedule, and I need you to extract the relevant information and return it in a precise JSON format.
 
 ### Requirements:
 
-1. **Extract the Date:**
-   - Identify and extract the date of the schedule from the raw text.
-   - The date should be placed at the top of the JSON under the key "date".
+1. **Extract the Date (Gregorian Only):**
+   - Identify and extract the **Gregorian date** of the schedule from the raw text.
+   - **Output the date strictly as DD/MM/YYYY** (e.g. "09/01/2025"), ignoring any Hijri portion.
 
 2. **Extract Schedule Items:**
    - For each schedule entry, extract the following details:
@@ -44,18 +48,18 @@ You are a data assistant specialized in processing Arabic text data. I have a ra
 
 3. **JSON Structure:**
    - The extracted information should be organized into a JSON object with the following structure:
-     {{
-       "date": "<Extracted Date>",
-       "schedule": [
-         {{
-           "الوقت": "<Time>",
-           "القارئ": "<Reciter>",
-           "السور": "<Surahs>",
-           "المدة": "<Duration>"
-         }},
-         ...
-       ]
-     }}
+   {{
+     "date": "<Extracted Date in DD/MM/YYYY>",
+     "schedule": [
+       {{
+         "الوقت": "<Time>",
+         "القارئ": "<Reciter>",
+         "السور": "<Surahs>",
+         "المدة": "<Duration>"
+       }},
+       ...
+     ]
+   }}
 
 4. **Output Only JSON:**
    - Your response must contain only the JSON object as specified. 
@@ -63,16 +67,20 @@ You are a data assistant specialized in processing Arabic text data. I have a ra
 
 5. **Handle Formatting Variations:**
    - The raw text may have slight variations in formatting. Please be as consistent as possible in extracting the data.
+   - Ensure the "date" is always in the DD/MM/YYYY format.
 
 Raw Arabic Radio Schedule Text:
 {raw_text}
 """
 
-# Schema validation for the Gemini response
+# -----------------------------------------------------------------------------
+# GEMINI_RESPONSE_SCHEMA
+# -----------------------------------------------------------------------------
+# Ensures the response from Gemini has the right structure.
 GEMINI_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "date": {"type": "string"},
+        "date": {"type": "string"},  # e.g., "09/01/2025"
         "schedule": {
             "type": "array",
             "items": {
@@ -90,6 +98,22 @@ GEMINI_RESPONSE_SCHEMA = {
     "required": ["date", "schedule"]
 }
 
+# -----------------------------------------------------------------------------
+# strip_code_fences
+# -----------------------------------------------------------------------------
+def strip_code_fences(text: str) -> str:
+    """
+    Removes Markdown code fences (e.g., ```json) from the beginning and end of the text.
+    """
+    pattern = r'^```(?:json)?\s*\n?(.*?)\n?```$'
+    match = re.match(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
+# -----------------------------------------------------------------------------
+# process_schedule_with_gemini
+# -----------------------------------------------------------------------------
 def process_schedule_with_gemini(raw_text: str) -> dict:
     """
     Sends raw schedule text to the Gemini API, retrieves the response, 
@@ -106,12 +130,12 @@ def process_schedule_with_gemini(raw_text: str) -> dict:
         Exception: For unexpected errors during API interaction.
     """
     logger.info("Sending raw text to Gemini for processing.")
-
-    # Prepare the prompt
+    
+    # Build the prompt
     prompt = PROMPT_TEMPLATE.format(raw_text=raw_text)
 
     try:
-        # Send the prompt to Gemini with specified parameters
+        # Send the prompt to Gemini
         response = model.generate_content(prompt)
 
         if not response.text:
@@ -126,7 +150,7 @@ def process_schedule_with_gemini(raw_text: str) -> dict:
         # Parse the response as JSON
         parsed_json = json.loads(cleaned_response)
 
-        # Validate the structure of the JSON against schema
+        # Validate the structure of the JSON against our schema
         validate(instance=parsed_json, schema=GEMINI_RESPONSE_SCHEMA)
 
         logger.info("Successfully processed schedule with Gemini.")
@@ -146,47 +170,59 @@ def process_schedule_with_gemini(raw_text: str) -> dict:
         logger.error(f"Error while processing schedule with Gemini: {e}")
         raise
 
-def process_gemini_output(gemini_output):
+# -----------------------------------------------------------------------------
+# process_gemini_output
+# -----------------------------------------------------------------------------
+def process_gemini_output(gemini_output: dict) -> dict:
     """
-    Converts Gemini output to the expected structure for storing in the database.
+    Takes the JSON from Gemini and converts it to our final format, ensuring
+    we parse the 'DD/MM/YYYY' string into 'YYYY-MM-DD' internally.
+    
+    Returns a dict like:
+    {
+        "schedule_date": "YYYY-MM-DD",
+        "final_schedule": [...]
+    }
     """
-    # Parse and reformat the date
-    date_raw = gemini_output["date"].replace("م", "").strip()
-    schedule_date = datetime.strptime(date_raw, "%d/%m/%Y").strftime("%Y-%m-%d")
+    # 1) Grab the raw date from Gemini
+    date_raw = gemini_output["date"].strip()
 
-    # Process the schedule items
+    # 2) Extract only the DD/MM/YYYY portion
+    match = re.search(r"\b\d{1,2}/\d{1,2}/\d{4}\b", date_raw)
+    if not match:
+        # If we can't find day/month/year, raise an error
+        raise ValueError(f"Could not locate Gregorian date in '{date_raw}'")
+
+    extracted_date = match.group(0)  # e.g. "09/01/2025"
+
+    # 3) Convert the substring into a Python datetime
+    parsed_dt = dateparser.parse(extracted_date, languages=["ar"])
+    if not parsed_dt:
+        raise ValueError(f"Could not parse date from '{extracted_date}' using dateparser.")
+
+    # We'll store it internally as "YYYY-MM-DD"
+    schedule_date = parsed_dt.strftime("%Y-%m-%d")
+
+    # 4) Convert schedule array
     final_schedule = []
     for item in gemini_output["schedule"]:
+        # We'll rename 'السور' -> 'السورة' and remove non-digits from 'المدة'
         final_schedule.append({
             "الوقت": item.get("الوقت", "").strip(),
             "القارئ": item.get("القارئ", "").strip(),
-            "السورة": item.get("السور", "").strip(),  # Rename 'السور' -> 'السورة'
-            "المدة": re.sub(r"[^\d.]", "", item.get("المدة", ""))  # Extract numeric part of 'المدة'
+            "السورة": item.get("السور", "").strip(),
+            "المدة": re.sub(r"[^\d.]", "", item.get("المدة", "")) 
         })
 
-    # Return the processed data
+    # 5) Return final structure
     return {
         "schedule_date": schedule_date,
         "final_schedule": final_schedule
     }
 
-def strip_code_fences(text: str) -> str:
-    """
-    Removes Markdown code fences (e.g., ```json) from the beginning and end of the text.
-
-    Args:
-        text (str): The text to clean.
-
-    Returns:
-        str: Cleaned text without code fences.
-    """
-    # This regex attempts to remove triple backticks around JSON
-    pattern = r'^```(?:json)?\s*\n?(.*?)\n?```$'
-    match = re.match(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
+# -----------------------------------------------------------------------------
+# retry_gemini_request
+# -----------------------------------------------------------------------------
 def retry_gemini_request(raw_text: str, retries: int = 3, backoff_factor: float = 1.0) -> dict:
     """
     Retries the Gemini request in case of failures.
@@ -212,5 +248,6 @@ def retry_gemini_request(raw_text: str, retries: int = 3, backoff_factor: float 
                 delay = backoff_factor * (2 ** attempt)
                 logger.info(f"Retrying after {delay} seconds...")
                 time.sleep(delay)
+
     logger.error("All retry attempts to process schedule with Gemini failed.")
     raise Exception("Failed to process schedule with Gemini after multiple attempts.")

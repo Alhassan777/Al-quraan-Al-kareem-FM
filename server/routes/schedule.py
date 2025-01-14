@@ -5,6 +5,9 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_socketio import emit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+# >>> NEW
+import dateparser
+
 # Local imports
 from database import db
 from models import DailySchedule, DailyTableMetadata
@@ -18,7 +21,6 @@ from schedule_parsing.gemini_handler import (
 )
 from schedule_parsing.gemini_handler import PROMPT_TEMPLATE, API_KEY, model
 
-
 logger = logging.getLogger(__name__)
 
 # Define the Blueprint
@@ -27,15 +29,22 @@ schedule_bp = Blueprint("schedule_bp", __name__)
 ############################
 # HELPER: parse_header_dates
 ############################
+# Updated pattern to handle both "الموافق" and "الوافق", ignoring case
 header_date_pattern = re.compile(
-    r'يوم\s+(\S+)\s*:\s*(.+?هـ)\s+الموافق\s+(\d+/\d+/\d+م?\.?)(?=\s|$)',
-    re.UNICODE
+    # Explanation:
+    #   يوم\s+(\S+)\s*:   -> captures the day name
+    #   (.+?هـ)\s+        -> captures anything up to 'هـ' (the Hijri date)
+    #   (?:الموافق|الوافق) -> matches either 'الموافق' or 'الوافق'
+    #   \s+(\d{1,2}/\d{1,2}/\d{4}م?\.?) -> captures the Gregorian date with optional 'م' or '.' 
+    r'يوم\s+(\S+)\s*:\s*(.+?هـ)\s+(?:الموافق|الوافق)\s+(\d{1,2}/\d{1,2}/\d{4}م?\.?)',
+    re.UNICODE | re.IGNORECASE
 )
 
 def parse_header_dates(raw_text: str) -> dict:
     """
     A local helper that extracts date from lines like:
       يوم (اسم اليوم) : (التاريخ الهجري) الموافق (التاريخ الميلادي)
+    Now it also matches 'الوافق' and is case-insensitive.
     """
     for line in raw_text.splitlines():
         line = line.strip()
@@ -46,31 +55,38 @@ def parse_header_dates(raw_text: str) -> dict:
             return {
                 "اليوم": match.group(1).strip(),
                 "التاريخ_الهجري": match.group(2).strip(),
-                "التاريخ_الميلادي": match.group(3).rstrip('.').strip()
+                # remove trailing dot or 'م' if present
+                "التاريخ_الميلادي": match.group(3).rstrip('.').rstrip('م').strip()
             }
     return {}
 
 ############################
-# HELPER: parse_gregorian_date
+# HELPER: parse_gregorian_date (NOW USING dateparser)
 ############################
 def parse_gregorian_date(date_string: str) -> datetime:
     """
     Extract only the DD/MM/YYYY portion from a mixed (Hijri + Gregorian) date string
-    and parse it as a Python datetime. Example input:
+    and parse it more flexibly using dateparser. Example input:
       '09 رجب 1446هـ الوافق 09/01/2025'
-    which should yield a datetime for 2025-01-09.
+    which should yield a datetime for 2025-01-09 (UTC or naive).
     
     :param date_string: The raw string potentially containing a Gregorian date substring.
-    :return: A datetime object corresponding to the DD/MM/YYYY portion.
-    :raises ValueError: If no valid Gregorian date substring is found.
+    :return: A datetime object corresponding to the extracted date.
+    :raises ValueError: If no valid Gregorian date substring is found or parsed.
     """
-    pattern = r"\d{2}/\d{2}/\d{4}"  # Looks for something like 09/01/2025
-    match = re.search(pattern, date_string)
+    # Using a quick regex to isolate something like "09/01/2025" or "9/1/2025"
+    match = re.search(r"\b\d{1,2}/\d{1,2}/\d{4}\b", date_string)
     if not match:
         raise ValueError(f"Could not find a Gregorian date in '{date_string}'")
 
-    extracted_date_str = match.group(0)  # e.g. "09/01/2025"
-    return datetime.strptime(extracted_date_str, "%d/%m/%Y")
+    extracted_date_str = match.group(0)  # e.g. "09/01/2025" or "9/1/2025"
+
+    # Use dateparser to flexibly handle the extracted substring
+    parsed_dt = dateparser.parse(extracted_date_str, languages=['ar'])
+    if not parsed_dt:
+        raise ValueError(f"Could not parse date from '{extracted_date_str}' using dateparser.")
+    
+    return parsed_dt
 
 # ------------------------ Helper Functions ------------------------
 def process_raw_text(raw_text):
@@ -93,7 +109,7 @@ def process_raw_text(raw_text):
         logger.error("No valid Gregorian date found in the header.")
         raise ValueError("No valid date found in the header.")
 
-    # Instead of manually "cleaning" the date string, use parse_gregorian_date
+    # Use parse_gregorian_date (with dateparser) for better flexibility
     try:
         schedule_date = parse_gregorian_date(date_str).date()
         logger.debug(f"Parsed schedule date: {schedule_date}")
@@ -199,7 +215,7 @@ def store_processed_data(processed_data):
     db.session.commit()
     logger.info(f"Schedule for {schedule_date} successfully stored in the database.")
 
-    # Emit a WebSocket event
+    # Emit a WebSocket event if available
     socketio = current_app.config.get('SOCKETIO')
     if socketio:
         socketio.emit(
