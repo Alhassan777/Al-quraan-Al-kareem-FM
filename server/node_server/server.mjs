@@ -40,10 +40,11 @@ app.use(
   cors({
     origin: FRONTEND_URLS,
     credentials: true,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "OPTIONS"], // <--- add OPTIONS here
     allowedHeaders: ["Content-Type", "x-user-id"],
   })
 );
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
