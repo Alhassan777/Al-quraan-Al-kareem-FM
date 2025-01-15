@@ -1,5 +1,5 @@
 /**************************************
- * backend/server.mjs (hardcoded origins)
+ * backend/server.mjs
  **************************************/
 
 import express from "express";
@@ -44,16 +44,14 @@ const ALLOWED_ORIGINS = [
   "https://www.qurankareemradio.com",
 ];
 
-// 1) CORS MIDDLEWARE FIRST
+// 1) USE CORS MIDDLEWARE
 app.use(
   cors({
-    // Dynamically check allowed origins
     origin: (origin, callback) => {
-      // If no Origin header (e.g., same-site or server-to-server requests), allow it
+      // Allow server-to-server or no-origin requests
       if (!origin) {
         return callback(null, true);
       }
-      // Check if the requesting origin is in our ALLOWED_ORIGINS array
       if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
@@ -61,19 +59,16 @@ app.use(
       return callback(new Error(`CORS Not Allowed for origin: ${origin}`), false);
     },
     credentials: true,
-    // Expanded allowed methods
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    // Expanded allowed headers
     allowedHeaders: ["Content-Type", "x-user-id", "Origin", "Authorization"],
-    // Explicitly expose certain headers (optional example)
     exposedHeaders: ["Content-Length", "Content-Type", "X-Request-Id"],
-    // Preflight request handling
     preflightContinue: false,
-    optionsSuccessStatus: 204,
+    optionsSuccessStatus: 204, // For older browsers
   })
 );
 
-// 2) Removed app.options("*", cors()) to avoid conflicts
+// 2) EXPLICITLY HANDLE OPTIONS REQUESTS
+app.options("*", cors());
 
 // Debug: show environment + allowed origins
 console.log("Environment:", environment);
@@ -141,9 +136,7 @@ app.use((req, res, next) => {
 function getOrCreateUserSession(userID) {
   if (!activeSessions.has(userID)) {
     activeSessions.set(userID, {
-      streamSession: {
-        isActive: false,
-      },
+      streamSession: { isActive: false },
       recordSession: {
         ffmpegProcess: null,
         filePath: null,
@@ -400,10 +393,7 @@ app.get("/stream", async (req, res) => {
     });
 
     // Pass along relevant headers
-    res.setHeader(
-      "Content-Type",
-      response.headers["content-type"] || "audio/mpeg"
-    );
+    res.setHeader("Content-Type", response.headers["content-type"] || "audio/mpeg");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
