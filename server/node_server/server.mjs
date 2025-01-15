@@ -1,5 +1,5 @@
 /**************************************
- * backend/server.js
+ * backend/server.mjs (hardcoded origins)
  **************************************/
 import express from "express";
 import axios from "axios";
@@ -33,33 +33,27 @@ const PORT = process.env.PORT || 3001;
 app.set("trust proxy", true); // Required for correct IP + protocol behind proxies
 
 /**************************************
- * DYNAMIC CORS CONFIG
+ * HARDCODED CORS CONFIG
  **************************************/
-const FRONTEND_PROD_URL = process.env.FRONTEND_PROD_URL; // e.g. "https://qurannfm.netlify.app"
-const FRONTEND_DEV_URL = process.env.FRONTEND_DEV_URL || "http://localhost:5173";
+const ALLOWED_ORIGINS = [
+  // Add all domains you want to allow — including local dev if needed
+  "http://localhost:5173",
+  "https://qurannfm.netlify.app",
+  "https://qurankareemradio.com",
+  "https://www.qurankareemradio.com",
+];
 
-// We'll store potential origins in an array, so we can allow both dev & prod if needed
-const ALLOWED_ORIGINS =
-  environment === "production"
-    ? [FRONTEND_PROD_URL]
-    : [FRONTEND_DEV_URL, FRONTEND_PROD_URL].filter(Boolean);
-
-// Example: If environment=production, ALLOWED_ORIGINS = [ "https://qurannfm.netlify.app" ]
-// If environment=development, ALLOWED_ORIGINS might be [ "http://localhost:5173", "https://qurannfm.netlify.app" ] 
-// (in case you also need to test production domain in dev)
-
+// Apply CORS middleware
 app.use(
   cors({
     origin: (origin, callback) => {
-      // If no Origin header (e.g. same-site request or server-to-server), allow it
+      // If no Origin header (e.g. same-site or server-to-server), allow it
       if (!origin) {
         return callback(null, true);
       }
       if (ALLOWED_ORIGINS.includes(origin)) {
-        // If the origin is in our list, allow
         return callback(null, true);
       }
-      // Otherwise, block
       console.error("CORS blocked origin:", origin);
       return callback(new Error(`CORS Not Allowed for origin: ${origin}`), false);
     },
@@ -72,6 +66,10 @@ app.use(
 // Explicitly handle all `OPTIONS` calls
 app.options("*", cors());
 
+// Debug: show environment + allowed origins
+console.log("Environment:", environment);
+console.log("HARDCODED ALLOWED_ORIGINS:", ALLOWED_ORIGINS);
+
 /**************************************
  * MIDDLEWARE
  **************************************/
@@ -79,7 +77,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Debug: log incoming requests, headers, and environment
+// Debug: log incoming requests
 app.use((req, res, next) => {
   console.log(`[${req.method}] ${req.path} - Env: ${environment}`);
   console.log("Headers:", req.headers);
@@ -108,7 +106,7 @@ app.use((req, res, next) => {
     userID = uuidv4();
     res.cookie("userID", userID, {
       httpOnly: true,
-      secure: environment === "production",
+      secure: environment === "production", // only HTTPS in production
       sameSite: environment === "production" ? "strict" : "lax",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
@@ -238,7 +236,7 @@ app.post("/stop-recording", async (req, res) => {
   try {
     const { ffmpegProcess, filePath, startTime } = recordSession;
 
-    // Enforce minimum 1 second
+    // Enforce minimum 1 second recording
     const elapsed = Date.now() - startTime;
     if (elapsed < 1000) {
       await new Promise((resolve) => setTimeout(resolve, 1000 - elapsed));
@@ -382,7 +380,10 @@ app.get("/stream", async (req, res) => {
     });
 
     // Pass along relevant headers
-    res.setHeader("Content-Type", response.headers["content-type"] || "audio/mpeg");
+    res.setHeader(
+      "Content-Type",
+      response.headers["content-type"] || "audio/mpeg"
+    );
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
@@ -410,5 +411,5 @@ app.get("/stream", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${environment}`);
-  console.log("Allowed Origins:", ALLOWED_ORIGINS);
+  console.log("HARDCODED ALLOWED_ORIGINS:", ALLOWED_ORIGINS);
 });
