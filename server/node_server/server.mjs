@@ -26,7 +26,7 @@ const app = express();
  * ENV + PORT
  **************************************/
 const environment = process.env.ENVIRONMENT || "development";
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 /**************************************
  * TRUST PROXIES
@@ -47,12 +47,13 @@ const ALLOWED_ORIGINS = [
 // 1) CORS MIDDLEWARE FIRST
 app.use(
   cors({
+    // Dynamically check allowed origins
     origin: (origin, callback) => {
-      // If no Origin header (e.g. same-site or server-to-server), allow it
+      // If no Origin header (e.g., same-site or server-to-server requests), allow it
       if (!origin) {
         return callback(null, true);
       }
-      // Check against ALLOWED_ORIGINS
+      // Check if the requesting origin is in our ALLOWED_ORIGINS array
       if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
@@ -72,8 +73,7 @@ app.use(
   })
 );
 
-// 2) REMOVE app.options("*", cors())
-// (Claude recommended removing it to avoid conflicts)
+// 2) Removed app.options("*", cors()) to avoid conflicts
 
 // Debug: show environment + allowed origins
 console.log("Environment:", environment);
@@ -96,7 +96,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// (Optional) Additional debug: log incoming requests
+// Additional debug: log incoming requests
 app.use((req, res, next) => {
   console.log(`[${req.method}] ${req.path} - Env: ${environment}`);
   console.log("Headers:", req.headers);
@@ -263,7 +263,8 @@ app.post("/stop-recording", async (req, res) => {
 
     // Kill the FFmpeg process
     ffmpegProcess.kill("SIGTERM");
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // wait to finalize file
+    // Wait a bit to allow the file to finalize
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     if (!fs.existsSync(filePath)) {
       throw new Error("Recording file not found");
