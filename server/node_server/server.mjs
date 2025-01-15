@@ -1,6 +1,7 @@
 /**************************************
  * backend/server.mjs (hardcoded origins)
  **************************************/
+
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
@@ -43,7 +44,7 @@ const ALLOWED_ORIGINS = [
   "https://www.qurankareemradio.com",
 ];
 
-// Apply CORS middleware
+// 1) CORS MIDDLEWARE FIRST
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -51,6 +52,7 @@ app.use(
       if (!origin) {
         return callback(null, true);
       }
+      // Check against ALLOWED_ORIGINS
       if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
@@ -58,26 +60,43 @@ app.use(
       return callback(new Error(`CORS Not Allowed for origin: ${origin}`), false);
     },
     credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "x-user-id"],
+    // Expanded allowed methods
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    // Expanded allowed headers
+    allowedHeaders: ["Content-Type", "x-user-id", "Origin", "Authorization"],
+    // Explicitly expose certain headers (optional example)
+    exposedHeaders: ["Content-Length", "Content-Type", "X-Request-Id"],
+    // Preflight request handling
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   })
 );
 
-// Explicitly handle all `OPTIONS` calls
-app.options("*", cors());
+// 2) REMOVE app.options("*", cors())
+// (Claude recommended removing it to avoid conflicts)
 
 // Debug: show environment + allowed origins
 console.log("Environment:", environment);
 console.log("HARDCODED ALLOWED_ORIGINS:", ALLOWED_ORIGINS);
 
+// 3) TEMPORARY LOGGING FOR RAILWAY TROUBLESHOOTING
+app.use((req, res, next) => {
+  console.log("Incoming request:", {
+    method: req.method,
+    origin: req.headers.origin,
+    path: req.path,
+  });
+  next();
+});
+
 /**************************************
- * MIDDLEWARE
+ * MIDDLEWARE (BODY PARSER / COOKIE PARSER)
  **************************************/
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Debug: log incoming requests
+// (Optional) Additional debug: log incoming requests
 app.use((req, res, next) => {
   console.log(`[${req.method}] ${req.path} - Env: ${environment}`);
   console.log("Headers:", req.headers);
