@@ -20,30 +20,39 @@ const getUserId = () => {
 };
 
 const Player = () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // State
+  // ─────────────────────────────────────────────────────────────────────────
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState("جاهز للتشغيل"); // <== CHANGE (Arabic)
+  const [status, setStatus] = useState("جاهز للتشغيل");
+  
+  // Volume state (range 0–100)
   const [volume, setVolume] = useState(50);
 
   // Recording duration & unit
   const [recordingDuration, setRecordingDuration] = useState(10);
   const [recordingUnit, setRecordingUnit] = useState("seconds");
 
+  // Visual / UI toggles
   const [streamingBlink, setStreamingBlink] = useState(false);
   const [recordingFlip, setRecordingFlip] = useState(false);
 
+  // Timeout reference for auto-stop recording
   const recordingTimeoutRef = useRef(null);
   const isRecordingRef = useRef(false);
 
-  // Keep isRecordingRef in sync
   useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
 
+  // Persist user ID
   const userId = useRef(getUserId());
 
-  // Adjust accordingly
+  // ─────────────────────────────────────────────────────────────────────────
+  // Backend URL, stream URL, and waveform activation
+  // ─────────────────────────────────────────────────────────────────────────
   const backendUrl =
     import.meta.env.VITE_TESTING_MODE === "TRUE"
       ? import.meta.env.VITE_NODE_DEV_URL
@@ -53,7 +62,7 @@ const Player = () => {
   const [streamUrl, setStreamUrl] = useState(fallbackStreamUrl);
   const [visualizationActive, setVisualizationActive] = useState(false);
 
-  // Fetch stream URL
+  // Fetch the current stream URL from backend
   useEffect(() => {
     const fetchStreamUrl = async () => {
       try {
@@ -71,7 +80,9 @@ const Player = () => {
     fetchStreamUrl();
   }, [backendUrl]);
 
-  // Streaming blink effect
+  // ─────────────────────────────────────────────────────────────────────────
+  // Blink effect for streaming
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let interval;
     if (isPlaying) {
@@ -86,7 +97,7 @@ const Player = () => {
     };
   }, [isPlaying]);
 
-  // Recording flip effect
+  // Flip animation for recording icon
   useEffect(() => {
     if (isRecording) {
       setRecordingFlip(true);
@@ -95,13 +106,16 @@ const Player = () => {
     }
   }, [isRecording]);
 
-  // ========== PLAY/PAUSE LOGIC ==========
+  // ─────────────────────────────────────────────────────────────────────────
+  // PLAY/PAUSE Logic
+  // ─────────────────────────────────────────────────────────────────────────
   const togglePlayPause = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
 
     try {
       if (isPlaying) {
+        // Stop
         try {
           await axios.post(`${backendUrl}/stop-stream`, {
             userId: userId.current,
@@ -113,6 +127,7 @@ const Player = () => {
         setStatus("تم إيقاف العرض المرئي");
         setIsPlaying(false);
       } else {
+        // Start
         const response = await axios.post(`${backendUrl}/stream/start-stream`, {
           userId: userId.current,
         });
@@ -132,7 +147,9 @@ const Player = () => {
     }
   };
 
-  // ========== START RECORDING ==========
+  // ─────────────────────────────────────────────────────────────────────────
+  // RECORDING Logic
+  // ─────────────────────────────────────────────────────────────────────────
   const startRecording = async () => {
     setIsProcessing(true);
     try {
@@ -149,6 +166,7 @@ const Player = () => {
       setStatus(response.data.message || "تم بدء التسجيل");
       setIsRecording(true);
 
+      // If not manual, set up an auto-stop timer
       if (recordingUnit !== "manual") {
         if (recordingTimeoutRef.current) {
           clearTimeout(recordingTimeoutRef.current);
@@ -185,7 +203,6 @@ const Player = () => {
     }
   };
 
-  // ========== STOP RECORDING ==========
   const stopRecording = async () => {
     setIsProcessing(true);
     try {
@@ -200,6 +217,7 @@ const Player = () => {
           },
         }
       );
+
       if (!response.data || response.data.size === 0) {
         throw new Error("لم يتم استلام أي بيانات تسجيل");
       }
@@ -207,11 +225,13 @@ const Player = () => {
       setStatus("تم إيقاف التسجيل وجاهز للتنزيل");
       setIsRecording(false);
 
+      // Clear any auto-stop timer
       if (recordingTimeoutRef.current) {
         clearTimeout(recordingTimeoutRef.current);
         recordingTimeoutRef.current = null;
       }
 
+      // Download the recorded file
       const blob = new Blob([response.data], { type: "audio/mpeg" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -231,7 +251,6 @@ const Player = () => {
     }
   };
 
-  // ========== TOGGLE RECORDING ==========
   const toggleRecording = () => {
     if (isProcessing) return;
     if (isRecording) {
@@ -250,11 +269,11 @@ const Player = () => {
     };
   }, []);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="bg-[#1a2b47] w-full min-h-screen flex flex-col items-center py-6 px-4">
-      {/* =====================================
-          Arabic text + Removing old "Currently Broadcasting" text
-          ===================================== */}
       <style>
         {`
           .flip-animation {
@@ -281,13 +300,17 @@ const Player = () => {
           alt="شعار المحطة"
           className="w-32 h-32 object-contain mb-4"
         />
-        {/* <== Remove "Currently Broadcasting..." and "From Gardens of Faith" */}
       </div>
 
       {/* Waveform Visualization */}
-      <div className="w-full max-w-md mt-2"> {/* <== SHIFTED DOWN A BIT */}
-        {isPlaying && <AudioBars streamUrl={streamUrl} active={visualizationActive} />}
-        {!isPlaying && (
+      <div className="w-full max-w-md mt-2">
+        {isPlaying ? (
+          <AudioBars
+            streamUrl={streamUrl}
+            active={visualizationActive}
+            volume={volume}  
+          />
+        ) : (
           <div className="w-full h-80 bg-[#001f3f] rounded-lg flex items-center justify-center">
             <p className="text-white/50">اضغط تشغيل لرؤية الموجات</p>
           </div>
@@ -296,59 +319,58 @@ const Player = () => {
 
       {/* Playback & Recording Controls */}
       <div className="flex items-center justify-center space-x-10 mt-6 relative">
-  {/* Play / Pause Button */}
-  <div className="relative group">
-    <button
-      onClick={togglePlayPause}
-      className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
-        isPlaying ? "bg-blue-500 hover:bg-blue-600"  : "bg-green-500 hover:bg-green-600"
-      }`}
-      disabled={isProcessing}
-    >
-      {isPlaying ? (
-        <Pause size={28} className="text-white" />
-      ) : (
-        <Play size={28} className="text-white" />
-      )}
-    </button>
-    {/* Tooltip */}
-    <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-      {isPlaying ? "إيقاف التشغيل" : "تشغيل الصوت"}
-    </div>
-  </div>
+        {/* Play / Pause Button */}
+        <div className="relative group">
+          <button
+            onClick={togglePlayPause}
+            className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
+              isPlaying ? "bg-blue-500 hover:bg-blue-600" : "bg-green-500 hover:bg-green-600"
+            }`}
+            disabled={isProcessing}
+          >
+            {isPlaying ? (
+              <Pause size={28} className="text-white" />
+            ) : (
+              <Play size={28} className="text-white" />
+            )}
+          </button>
+          {/* Tooltip */}
+          <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {isPlaying ? "إيقاف التشغيل" : "تشغيل الصوت"}
+          </div>
+        </div>
 
-  {/* Record / Stop Button */}
-  <div className="relative group">
-    <button
-      onClick={toggleRecording}
-      className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
-        isRecording
-          ? "bg-red-500 hover:bg-red-600"
-          : "bg-white/10 hover:bg-white/20"
-      }`}
-      disabled={isProcessing}
-    >
-      {isRecording ? (
-        <StopCircle size={28} className="text-white" />
-      ) : (
-        <Mic size={28} className="text-white" />
-      )}
-    </button>
-    {/* Tooltip */}
-    <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-      {isRecording ? "إيقاف التسجيل" : "بدء التسجيل"}
-    </div>
-  </div>
-</div>
+        {/* Record / Stop Button */}
+        <div className="relative group">
+          <button
+            onClick={toggleRecording}
+            className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
+              isRecording
+                ? "bg-red-500 hover:bg-red-600"
+                : "bg-white/10 hover:bg-white/20"
+            }`}
+            disabled={isProcessing}
+          >
+            {isRecording ? (
+              <StopCircle size={28} className="text-white" />
+            ) : (
+              <Mic size={28} className="text-white" />
+            )}
+          </button>
+          {/* Tooltip */}
+          <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {isRecording ? "إيقاف التسجيل" : "بدء التسجيل"}
+          </div>
+        </div>
+      </div>
 
       {/* Volume Slider & Recording Duration */}
-      {/* <== CHANGE: Added a border or partition for aesthetic */}
       <div className="flex flex-col items-center mt-8 space-y-6 w-full">
         <div className="w-full max-w-md bg-[#112436] p-4 rounded shadow-md">
           {/* Volume */}
           <div className="mb-5">
             <label className="block text-white/70 text-center mb-2">
-              مستوى الصوت: {volume} {/* <== "Volume set to" in Arabic */}
+              مستوى الصوت: {volume}
             </label>
             <VolumeSliderComponent
               volume={volume}
@@ -359,11 +381,10 @@ const Player = () => {
           </div>
 
           {/* Recording Duration & Unit */}
-          <hr className="border-t border-white/20 my-4" />{/* <== Partition */}
+          <hr className="border-t border-white/20 my-4" />
           <div className="flex flex-col items-center">
             <label className="text-sm text-white/70 mb-2">مدة التسجيل</label>
             <div className="flex items-center space-x-2">
-              {/* <== Hide input if "manual" */}
               {recordingUnit !== "manual" && (
                 <input
                   type="number"
@@ -373,14 +394,14 @@ const Player = () => {
                     setRecordingDuration(parseInt(e.target.value, 10) || 1)
                   }
                   className="w-16 text-center text-white bg-white/10 border border-white/20 rounded"
-                  disabled={isRecording} // <== SUGGESTION: user not allowed to change mid-record
+                  disabled={isRecording}
                 />
               )}
               <select
                 value={recordingUnit}
                 onChange={(e) => setRecordingUnit(e.target.value)}
                 className="text-white bg-white/10 border border-white/20 rounded px-2"
-                disabled={isRecording} // <== Disallow changes while recording
+                disabled={isRecording}
               >
                 <option value="manual">يدوي</option>
                 <option value="seconds">ثوانٍ</option>
@@ -392,7 +413,7 @@ const Player = () => {
         </div>
       </div>
 
-      {/* Indicators & Status Messages */}
+      {/* Indicators & Status */}
       <div className="w-full max-w-xl mx-auto flex flex-col items-center mt-6">
         <div className="flex items-center space-x-8 mb-4">
           {/* Recording Indicator */}
