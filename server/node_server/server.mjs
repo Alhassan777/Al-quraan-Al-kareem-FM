@@ -1,7 +1,7 @@
 // backend/server.js
 
 import express from "express";
-import axios from 'axios';
+import axios from "axios";
 import dotenv from "dotenv";
 import path from "path";
 import cors from "cors";
@@ -19,147 +19,201 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const environment = process.env.ENVIRONMENT || "development";
-const PORT = 3001;
-const FRONTEND_URLS = environment === "production"
-  ? [process.env.FRONTEND_PROD_URL]
-  : [process.env.FRONTEND_DEV_URL, "http://localhost:5173"];
-const streamUrl = process.env.STREAM_URL;
-const recordingsDir = path.resolve(process.env.RECORDINGS_DIR || "recordings");
+const PORT = process.env.PORT || 3001;
 
-// Ensure recordings directory exists
+// CORS origins
+const FRONTEND_URLS =
+  environment === "production"
+    ? [process.env.FRONTEND_PROD_URL]
+    : [process.env.FRONTEND_DEV_URL, "http://localhost:5173"];
+
+// Audio stream URL
+const streamUrl = process.env.STREAM_URL;
+
+// Recording directory
+const recordingsDir = path.resolve(process.env.RECORDINGS_DIR || "recordings");
 if (!fs.existsSync(recordingsDir)) {
   fs.mkdirSync(recordingsDir, { recursive: true });
 }
 
-// Middleware setup with extended CORS options
-app.use(cors({
-  origin: FRONTEND_URLS,
-  credentials: true,
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type", "x-user-id"],
-}));
-
+app.use(
+  cors({
+    origin: FRONTEND_URLS,
+    credentials: true,
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "x-user-id"],
+  })
+);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Session tracking map
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSION TRACKING
+// We'll store for each userID a session object with two sub-objects:
+//
+//   {
+//     streamSession: {
+//       isActive: boolean,
+//       /* Additional properties if needed */
+//     },
+//     recordSession: {
+//       ffmpegProcess: ChildProcess or null,
+//       filePath: string,
+//       startTime: number
+//       /* Other relevant info */
+//     }
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
 const activeSessions = new Map();
 
-// Debug middleware to log requests
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBUG MIDDLEWARE
+// ─────────────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Cookie userID: ${req.cookies.userID}`);
   next();
 });
 
-// User session middleware with more robust ID handling
+// ─────────────────────────────────────────────────────────────────────────────
+// USER SESSION MIDDLEWARE
+// Ensure each request has a userID assigned via cookie or header
+// ─────────────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   let userID = req.cookies.userID;
-  
-  // Check for userID in headers as fallback
-  if (!userID && req.headers['x-user-id']) {
-    userID = req.headers['x-user-id'];
+
+  // Fallback: check for userID in headers
+  if (!userID && req.headers["x-user-id"]) {
+    userID = req.headers["x-user-id"];
   }
-  
+
+  // If still not found, generate a new one
   if (!userID) {
     userID = uuidv4();
-    res.cookie('userID', userID, {
+    res.cookie("userID", userID, {
       httpOnly: true,
       secure: environment === "production",
       sameSite: environment === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
   }
-  
+
   req.userID = userID;
   next();
 });
 
-// Start Recording Endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: Get or Create Session for the user
+// ─────────────────────────────────────────────────────────────────────────────
+function getOrCreateUserSession(userID) {
+  if (!activeSessions.has(userID)) {
+    activeSessions.set(userID, {
+      streamSession: {
+        isActive: false,
+      },
+      recordSession: {
+        ffmpegProcess: null,
+        filePath: null,
+        startTime: null,
+      },
+    });
+  }
+  return activeSessions.get(userID);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// START RECORDING
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/start-recording", async (req, res) => {
   const userID = req.userID;
   console.log(`Starting recording for user: ${userID}`);
 
-  if (activeSessions.has(userID)) {
-    console.log(`Found existing session for user ${userID}, cleaning up...`);
-    const existingSession = activeSessions.get(userID);
-    if (existingSession.ffmpegProcess) {
-      existingSession.ffmpegProcess.kill('SIGTERM');
-    }
-    activeSessions.delete(userID);
+  // Get/create the user's session
+  const userSession = getOrCreateUserSession(userID);
+  const { recordSession } = userSession;
+
+  // If there's an existing ffmpeg process, kill it (clean up old recording)
+  if (recordSession.ffmpegProcess) {
+    console.log(`Found existing recording for user ${userID}, cleaning up...`);
+    recordSession.ffmpegProcess.kill("SIGTERM");
   }
 
   const timestamp = Date.now();
   const filePath = path.resolve(recordingsDir, `${userID}_${timestamp}.mp3`);
 
   try {
+    // Spin up FFmpeg
     const ffmpegProcess = ffmpeg(streamUrl)
       .inputOptions([
-        '-y', // Overwrite output files without asking
-        '-re' // Read input at native frame rate
+        "-y", // overwrite output
+        "-re", // read input at native frame rate
       ])
-      .outputOptions([
-        '-acodec', 'libmp3lame',
-        '-ab', '128k',
-        '-ac', '2',
-        '-ar', '44100'
-      ])
-      .on('start', (cmd) => {
+      .outputOptions(["-acodec", "libmp3lame", "-ab", "128k", "-ac", "2", "-ar", "44100"])
+      .on("start", (cmd) => {
         console.log(`FFmpeg started with command: ${cmd}`);
       })
-      .on('error', (err, stdout, stderr) => {
+      .on("error", (err, stdout, stderr) => {
         console.error(`FFmpeg error for user ${userID}:`, err.message);
-        console.error('FFmpeg stderr:', stderr);
-        activeSessions.delete(userID);
+        console.error("FFmpeg stderr:", stderr);
+
+        // Clean up the recordSession if error
+        recordSession.ffmpegProcess = null;
+        recordSession.filePath = null;
+        recordSession.startTime = null;
       })
-      .on('end', () => {
+      .on("end", () => {
         console.log(`Recording ended for user ${userID}`);
       });
 
-    // Start the recording
     ffmpegProcess.save(filePath);
 
-    // Store session info
-    activeSessions.set(userID, {
-      ffmpegProcess,
-      filePath,
-      startTime: Date.now()
-    });
+    // Store new info in the recordSession sub-object
+    recordSession.ffmpegProcess = ffmpegProcess;
+    recordSession.filePath = filePath;
+    recordSession.startTime = Date.now();
 
     console.log(`Recording started for user ${userID} at ${filePath}`);
     res.status(200).json({
       message: "Recording started successfully",
-      filename: path.basename(filePath)
+      filename: path.basename(filePath),
     });
-
   } catch (error) {
     console.error(`Error starting recording for user ${userID}:`, error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Failed to start recording",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-// STOP RECORDING ENDPOINT 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// STOP RECORDING
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/stop-recording", async (req, res) => {
   const userID = req.userID;
   console.log(`Stopping recording for user: ${userID}`);
-  
-  const session = activeSessions.get(userID);
-  if (!session) {
+
+  const userSession = activeSessions.get(userID);
+  if (!userSession) {
+    return res.status(400).json({
+      message: "No session found for user",
+      userID,
+    });
+  }
+
+  const { recordSession } = userSession;
+  if (!recordSession.ffmpegProcess) {
     return res.status(400).json({
       message: "No active recording session found",
-      userID: userID,
-      activeSessions: Array.from(activeSessions.keys()),
+      userID,
     });
   }
 
   try {
-    const { ffmpegProcess, filePath, startTime } = session;
+    const { ffmpegProcess, filePath, startTime } = recordSession;
 
-    // Ensure minimum 1 second recording
+    // Ensure minimum 1-second recording
     const recordingDuration = Date.now() - startTime;
     if (recordingDuration < 1000) {
       await new Promise((resolve) => setTimeout(resolve, 1000 - recordingDuration));
@@ -168,10 +222,10 @@ app.post("/stop-recording", async (req, res) => {
     // Kill FFmpeg
     ffmpegProcess.kill("SIGTERM");
 
-    // Give the process a moment to finish writing the file
+    // Small delay to allow final write
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Check that file exists and is non-empty
+    // Check file
     if (!fs.existsSync(filePath)) {
       throw new Error("Recording file not found");
     }
@@ -182,17 +236,18 @@ app.post("/stop-recording", async (req, res) => {
 
     console.log(`Sending file to client: ${filePath} (${stats.size} bytes)`);
 
-    // Remove the active session before sending
-    activeSessions.delete(userID);
+    // Reset the recordSession data (but leave streamSession alone!)
+    recordSession.ffmpegProcess = null;
+    recordSession.filePath = null;
+    recordSession.startTime = null;
 
-    // Send file for download, then delete
+    // Send file for download
     res.sendFile(filePath, (err) => {
       if (err) {
         console.error(`Error sending file: ${err.message}`);
         return;
       }
-
-      // Automatically remove the file from the server after sending
+      // Delete the file after sending
       fs.unlink(filePath, (unlinkErr) => {
         if (unlinkErr) {
           console.error(`Error deleting file: ${unlinkErr.message}`);
@@ -203,124 +258,118 @@ app.post("/stop-recording", async (req, res) => {
     });
   } catch (error) {
     console.error(`Error stopping recording for user ${userID}:`, error);
+    // Reset the recordSession on error, but do NOT remove entire user session
+    userSession.recordSession = {
+      ffmpegProcess: null,
+      filePath: null,
+      startTime: null,
+    };
+
     res.status(500).json({
       message: "Failed to stop recording",
       error: error.message,
     });
-    
-    // Remove session on error to avoid leftover state
-    activeSessions.delete(userID);
   }
 });
 
-
-// Start Stream Endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// START STREAM
+// (Currently just sets isActive; real audio is proxied at /stream always.)
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/stream/start-stream", (req, res) => {
   const userID = req.userID;
   console.log(`Starting stream for user: ${userID}`);
 
-  if (activeSessions.has(userID)) {
-    console.log(`Found existing stream session for user ${userID}, cleaning up...`);
-    const existingSession = activeSessions.get(userID);
-    if (existingSession.streamActive) {
-      // If you have a stream process, terminate it here
-      // existingSession.streamProcess.kill('SIGTERM');
-    }
-    activeSessions.delete(userID);
-  }
+  const userSession = getOrCreateUserSession(userID);
+  const { streamSession } = userSession;
 
-  try {
-    // Implement any logic needed to start the stream visualization
-    // For now, we'll assume the stream is always available via /stream
-
-    activeSessions.set(userID, {
-      streamActive: true,
-      startTime: Date.now()
-    });
-
-    console.log(`Stream started for user ${userID}`);
-    res.status(200).json({
+  // If already streaming, do nothing or re-init if you have some custom logic
+  if (streamSession.isActive) {
+    console.log(`Stream is already active for user ${userID}.`);
+    return res.status(200).json({
       success: true,
-      message: "Stream started successfully."
-    });
-  } catch (error) {
-    console.error(`Error starting stream for user ${userID}:`, error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to start stream.",
-      error: error.message
+      message: "Stream already active.",
     });
   }
+
+  // Otherwise, set it active
+  streamSession.isActive = true;
+  console.log(`Stream started for user ${userID}`);
+  res.status(200).json({
+    success: true,
+    message: "Stream started successfully.",
+  });
 });
 
-// Stop Stream Endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// STOP STREAM
+// (Stops the "streamActive" flag; does not remove the entire user session.)
+// ─────────────────────────────────────────────────────────────────────────────
 app.post("/stop-stream", (req, res) => {
   const userID = req.userID;
   console.log(`Stopping stream for user: ${userID}`);
 
-  const session = activeSessions.get(userID);
-
-  if (!session || !session.streamActive) {
+  const userSession = activeSessions.get(userID);
+  if (!userSession || !userSession.streamSession.isActive) {
     console.log(`No active stream session found for user ${userID}`);
     return res.status(400).json({
       success: false,
-      message: "No active stream session found."
+      message: "No active stream session found.",
     });
   }
 
-  try {
-    // Implement any logic needed to stop the stream visualization
-    // For example, terminating a stream process or releasing resources
+  // Implement any real logic if you re-stream at the server
+  userSession.streamSession.isActive = false;
 
-    activeSessions.delete(userID);
-
-    console.log(`Stream stopped for user ${userID}`);
-    res.status(200).json({
-      success: true,
-      message: "Stream stopped successfully."
-    });
-  } catch (error) {
-    console.error(`Error stopping stream for user ${userID}:`, error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to stop stream.",
-      error: error.message
-    });
-  }
-});
-
-// Status Endpoint
-app.get("/status", (req, res) => {
-  const userID = req.userID;
-  const isRecording = activeSessions.has(userID) && activeSessions.get(userID).ffmpegProcess;
-  const isStreaming = activeSessions.has(userID) && activeSessions.get(userID).streamActive;
-
-  res.json({
-    status: "running",
-    userID: userID,
-    isRecording: isRecording,
-    isStreaming: isStreaming,
-    activeSessionsCount: activeSessions.size,
-    streamUrl: `${req.protocol}://${req.get('host')}/stream`, // Updated to point to /stream
+  console.log(`Stream stopped for user ${userID}`);
+  res.status(200).json({
+    success: true,
+    message: "Stream stopped successfully.",
   });
 });
 
-// Stream Endpoint
+// ─────────────────────────────────────────────────────────────────────────────
+// STATUS
+// Returns session status plus the proxied /stream URL
+// ─────────────────────────────────────────────────────────────────────────────
+app.get("/status", (req, res) => {
+  const userID = req.userID;
+  const userSession = activeSessions.get(userID);
+
+  // We only mark "isRecording" if recordSession exists with an ffmpegProcess
+  const isRecording = !!(
+    userSession?.recordSession && userSession.recordSession.ffmpegProcess
+  );
+
+  // We only mark "isStreaming" if streamSession exists and isActive
+  const isStreaming = !!(userSession?.streamSession && userSession.streamSession.isActive);
+
+  res.json({
+    status: "running",
+    userID,
+    isRecording,
+    isStreaming,
+    activeSessionsCount: activeSessions.size,
+    streamUrl: `${req.protocol}://${req.get("host")}/stream`, // same old proxy endpoint
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STREAM ENDPOINT (Proxy for live audio, to bypass CORS)
+// ─────────────────────────────────────────────────────────────────────────────
 app.get("/stream", async (req, res) => {
-  const targetStreamUrl = process.env.STREAM_URL || "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service";
-  
+  const targetStreamUrl =
+    process.env.STREAM_URL || "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service";
+
   try {
     console.log(`Proxying stream from: ${targetStreamUrl}`);
-
-    // Fetch the stream using axios
     const response = await axios.get(targetStreamUrl, { responseType: "stream" });
 
-    // Set appropriate headers for the stream
-    res.setHeader("Content-Type", response.headers["content-type"]);
+    res.setHeader("Content-Type", response.headers["content-type"] || "audio/mpeg");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
-    // Pipe the audio stream directly to the client
+    // Pipe the remote audio data to the response
     response.data.pipe(res);
 
     response.data.on("end", () => {
@@ -338,6 +387,9 @@ app.get("/stream", async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// START SERVER
+// ─────────────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Accepting requests from: ${FRONTEND_URLS}`);
