@@ -27,7 +27,7 @@ const Player = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("جاهز للتشغيل");
-  
+
   // Volume state (range 0–100)
   const [volume, setVolume] = useState(50);
 
@@ -61,6 +61,9 @@ const Player = () => {
   const fallbackStreamUrl = import.meta.env.VITE_FALLBACK_STREAM_URL;
   const [streamUrl, setStreamUrl] = useState(fallbackStreamUrl);
   const [visualizationActive, setVisualizationActive] = useState(false);
+
+  // Ref to the AudioBars component (forwardRef)
+  const audioBarsRef = useRef(null);
 
   // Fetch the current stream URL from backend
   useEffect(() => {
@@ -123,11 +126,18 @@ const Player = () => {
         } catch (stopErr) {
           console.error("Failed to stop stream on server:", stopErr);
         }
+        // Turn off visualization
         setVisualizationActive(false);
         setStatus("تم إيقاف العرض المرئي");
         setIsPlaying(false);
       } else {
-        // Start
+        // ===== MOBILE SAFARI FIX: Resume audio context if suspended =====
+        // This must happen inside the user-initiated event
+        if (audioBarsRef.current?.resumeContextIfSuspended) {
+          await audioBarsRef.current.resumeContextIfSuspended();
+        }
+
+        // Start stream on server
         const response = await axios.post(`${backendUrl}/stream/start-stream`, {
           userId: userId.current,
         });
@@ -306,9 +316,10 @@ const Player = () => {
       <div className="w-full max-w-md mt-2">
         {isPlaying ? (
           <AudioBars
+            ref={audioBarsRef}  // <--- forwardRef
             streamUrl={streamUrl}
             active={visualizationActive}
-            volume={volume}  
+            volume={volume}
           />
         ) : (
           <div className="w-full h-80 bg-[#001f3f] rounded-lg flex items-center justify-center">
@@ -324,7 +335,9 @@ const Player = () => {
           <button
             onClick={togglePlayPause}
             className={`w-14 h-14 flex items-center justify-center rounded-full transition-colors ${
-              isPlaying ? "bg-blue-500 hover:bg-blue-600" : "bg-green-500 hover:bg-green-600"
+              isPlaying
+                ? "bg-blue-500 hover:bg-blue-600"
+                : "bg-green-500 hover:bg-green-600"
             }`}
             disabled={isProcessing}
           >
