@@ -59,12 +59,44 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
 
     const initAudio = async () => {
       try {
-        // Create the <audio> element
-        const audio = new Audio();
-        audioRef.current = audio;
-        audio.crossOrigin = "anonymous";
-        audio.src = streamUrl;
-        audio.load();
+        let audioElement;
+
+        /**
+         * 1) If `streamUrl` is a normal URL (e.g. https://example.com/audio.mp3),
+         *    just create a new Audio() from that URL.
+         *
+         * 2) If `streamUrl` is a BLOB URL (e.g. blob:http://localhost:3000/...),
+         *    or if you have a Blob object, set the MIME type explicitly if needed.
+         */
+        if (typeof streamUrl === "string" && streamUrl.startsWith("blob:")) {
+          // If it's a blob: URL, we can just use it directly
+          audioElement = new Audio(streamUrl);
+        } else if (streamUrl instanceof Blob) {
+          // If streamUrl is an actual Blob object (e.g. from a recorder),
+          // ensure it has a MIME type. Example: { type: "audio/wav" }
+          const typedBlob =
+            streamUrl.type && streamUrl.type.startsWith("audio/")
+              ? streamUrl
+              : new Blob([streamUrl], { type: "audio/wav" }); // fallback
+
+          const blobUrl = URL.createObjectURL(typedBlob);
+          audioElement = new Audio(blobUrl);
+        } else {
+          // Normal URL (HTTP/S)
+          audioElement = new Audio(streamUrl);
+        }
+
+        // Set crossOrigin to "anonymous" for Web Audio analysis (CORS)
+        audioElement.crossOrigin = "anonymous";
+
+        // Optionally, listen for any error
+        audioElement.onerror = (e) => {
+          console.error("Audio element error:", e, audioElement.error);
+        };
+
+        // Attach to ref
+        audioRef.current = audioElement;
+        audioElement.load();
 
         // Create the AudioContext
         const AudioContextClass =
@@ -82,7 +114,7 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
         gainNode.gain.value = volume / 100; // initial volume
 
         // Create a MediaElementSource from <audio>
-        const sourceNode = audioContext.createMediaElementSource(audio);
+        const sourceNode = audioContext.createMediaElementSource(audioElement);
         sourceNode.connect(gainNode);
         gainNode.connect(analyzer);
         analyzer.connect(audioContext.destination);
@@ -93,8 +125,8 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
         gainNodeRef.current = gainNode;
 
         // Start playback
-        await audio.play(); 
-        // On iOS, might still need resumeContextIfSuspended in the click handler
+        await audioElement.play();
+        // On iOS, might still need resumeContextIfSuspended in the same gesture
       } catch (error) {
         console.error("Error initializing audio:", error);
       }
@@ -204,9 +236,9 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
           0,
           baseY
         );
-        gradient.addColorStop(0, "#FF0000");  // Red
+        gradient.addColorStop(0, "#FF0000"); // Red
         gradient.addColorStop(0.5, "#FFA500"); // Orange
-        gradient.addColorStop(1, "#00FFFF");  // Cyan
+        gradient.addColorStop(1, "#00FFFF"); // Cyan
 
         ctx.fillStyle = gradient;
         ctx.fillRect(x, baseY - barHeight, barWidth, barHeight);
@@ -225,11 +257,6 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
 
   return (
     <div className="p-4 w-full max-w-4xl mx-auto rounded-lg shadow-lg bg-[#001f3f] overflow-hidden">
-      {/* 
-        - We rely on the element's bounding box for dynamic canvas sizing.
-        - The canvas "className" controls its display size in CSS; the effect
-          sets its internal resolution (width/height in pixels).
-      */}
       <div className="relative w-full h-64">
         <canvas ref={canvasRef} className="w-full h-full" />
       </div>
