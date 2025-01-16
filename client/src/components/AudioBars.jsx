@@ -7,6 +7,17 @@ import React, {
   forwardRef,
 } from "react";
 
+/**
+ * Helper function to detect mobile devices.
+ * This is a basic check; adjust if needed for your user base.
+ */
+const isMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+};
+
 const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
@@ -60,10 +71,11 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
           window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContextClass();
 
-        // Create an AnalyserNode
+        // Decide on FFT size and smoothing based on device
+        const mobile = isMobileDevice();
         const analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = 128;
-        analyzer.smoothingTimeConstant = 0.6;
+        analyzer.fftSize = mobile ? 64 : 128; // smaller on mobile, bigger on desktop
+        analyzer.smoothingTimeConstant = mobile ? 0.7 : 0.6;
 
         // Create a GainNode to handle volume
         const gainNode = audioContext.createGain();
@@ -80,9 +92,9 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
         analyzerRef.current = analyzer;
         gainNodeRef.current = gainNode;
 
-        // Start playback (desktop usually works here, mobile iOS
-        // might require a resume inside user gesture)
-        await audio.play();
+        // Start playback
+        await audio.play(); 
+        // On iOS, might still need resumeContextIfSuspended in the click handler
       } catch (error) {
         console.error("Error initializing audio:", error);
       }
@@ -135,21 +147,28 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     // For smoothing bar animations
     const previousHeights = new Array(bufferLength).fill(0);
 
+    // Handle device pixel ratio for sharper rendering on high-DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect();
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    ctx.scale(dpr, dpr);
+
     const draw = () => {
       if (!active) return; // if no longer active, cancel
       animationRef.current = requestAnimationFrame(draw);
 
       analyzer.getByteFrequencyData(dataArray);
 
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Clear the entire drawing surface
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
 
       // Background
       ctx.fillStyle = "#001f3f";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-      const barWidth = canvas.width / bufferLength;
-      const baseY = canvas.height;
+      const barWidth = cssWidth / bufferLength;
+      const baseY = cssHeight;
       const stdDev = 0.4; // The width of the Gaussian peak
       const halfBufferLength = Math.floor(bufferLength / 2);
 
@@ -169,14 +188,14 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
 
         // Scale bar height
         const targetHeight =
-          (combinedData / 255) * canvas.height * 1.9 * gaussianFactor;
+          (combinedData / 255) * cssHeight * 1.9 * gaussianFactor;
 
         // Smooth transition for the bar height
         previousHeights[i] = previousHeights[i] * 0.7 + targetHeight * 0.3;
         const barHeight = previousHeights[i];
 
         // Center bars
-        const x = canvas.width / 2 + (i - halfBufferLength) * barWidth;
+        const x = cssWidth / 2 + (i - halfBufferLength) * barWidth;
 
         // Create gradient
         const gradient = ctx.createLinearGradient(
@@ -185,9 +204,9 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
           0,
           baseY
         );
-        gradient.addColorStop(0, "#FF0000"); // Red top
+        gradient.addColorStop(0, "#FF0000");  // Red
         gradient.addColorStop(0.5, "#FFA500"); // Orange
-        gradient.addColorStop(1, "#00FFFF"); // Cyan bottom
+        gradient.addColorStop(1, "#00FFFF");  // Cyan
 
         ctx.fillStyle = gradient;
         ctx.fillRect(x, baseY - barHeight, barWidth, barHeight);
@@ -206,13 +225,13 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
 
   return (
     <div className="p-4 w-full max-w-4xl mx-auto rounded-lg shadow-lg bg-[#001f3f] overflow-hidden">
+      {/* 
+        - We rely on the element's bounding box for dynamic canvas sizing.
+        - The canvas "className" controls its display size in CSS; the effect
+          sets its internal resolution (width/height in pixels).
+      */}
       <div className="relative w-full h-64">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full"
-          width={1200}
-          height={256}
-        />
+        <canvas ref={canvasRef} className="w-full h-full" />
       </div>
     </div>
   );
