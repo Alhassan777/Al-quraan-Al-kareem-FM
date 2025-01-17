@@ -19,6 +19,14 @@ const getUserId = () => {
   return userId;
 };
 
+// Simple mobile detection
+const isMobileDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
+};
+
 const Player = () => {
   // ─────────────────────────────────────────────────────────────────────────
   // State
@@ -28,7 +36,7 @@ const Player = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("جاهز للتشغيل");
 
-  const [volume, setVolume] = useState(50); // 0–100 range
+  const [volume, setVolume] = useState(50); // 0–100
   const [recordingDuration, setRecordingDuration] = useState(10);
   const [recordingUnit, setRecordingUnit] = useState("seconds");
 
@@ -37,6 +45,9 @@ const Player = () => {
 
   const recordingTimeoutRef = useRef(null);
   const isRecordingRef = useRef(false);
+
+  // Identify mobile vs. desktop once
+  const isMobile = isMobileDevice();
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -48,36 +59,30 @@ const Player = () => {
   // ─────────────────────────────────────────────────────────────────────────
   // URLs and config
   // ─────────────────────────────────────────────────────────────────────────
-  // Node server (for waveform generation & recording)
   const backendUrl =
     import.meta.env.VITE_TESTING_MODE === "TRUE"
       ? import.meta.env.VITE_NODE_DEV_URL
       : import.meta.env.VITE_NODE_PROD_URL;
 
-  // Old fallback (but we’ll have a new main stream URL from .env)
   const fallbackStreamUrl = import.meta.env.VITE_FALLBACK_STREAM_URL;
-  // The specialized stable platform link
   const mainStreamUrl = import.meta.env.VITE_MAIN_STREAM_URL;
 
-  // This is the URL we fetch from the Node server for waveform
-  // (In your original code, it’s updated from the server /status endpoint).
+  // For waveform (desktop-only)
   const [waveformStreamUrl, setWaveformStreamUrl] = useState(fallbackStreamUrl);
   const [visualizationActive, setVisualizationActive] = useState(false);
 
-  // Ref to the AudioBars component (forwardRef)
+  // Ref to <AudioBars> (desktop-only)
   const audioBarsRef = useRef(null);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 1) Always-available main audio element for stable playback
+  // Main audio element for stable playback
   // ─────────────────────────────────────────────────────────────────────────
   const mainAudioRef = useRef(null);
 
-  // On mount, set the src and default muted state
   useEffect(() => {
     if (mainAudioRef.current) {
       mainAudioRef.current.src = mainStreamUrl;
-      // Just to be safe, set volume or any other audio settings if needed
-      mainAudioRef.current.volume = volume / 100; 
+      mainAudioRef.current.volume = volume / 100;
     }
   }, [mainStreamUrl]);
 
@@ -89,9 +94,12 @@ const Player = () => {
   }, [volume]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 2) Fetch the Node server stream URL for waveform
+  // Fetch the Node server stream URL (desktop-only)
   // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // If mobile, don't fetch waveform stream or set up Node stream
+    if (isMobile) return;
+
     const fetchStreamUrl = async () => {
       try {
         const response = await axios.get(`${backendUrl}/status`);
@@ -106,7 +114,7 @@ const Player = () => {
       }
     };
     fetchStreamUrl();
-  }, [backendUrl]);
+  }, [backendUrl, isMobile]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Blink effect for streaming
@@ -143,44 +151,51 @@ const Player = () => {
 
     try {
       if (isPlaying) {
-        // Stop the Node server’s stream for waveform
-        try {
-          await axios.post(`${backendUrl}/stop-stream`, {
-            userId: userId.current,
-          });
-        } catch (stopErr) {
-          console.error("Failed to stop stream on server:", stopErr);
+        // Stop any Node-based waveform (desktop only)
+        if (!isMobile) {
+          try {
+            await axios.post(`${backendUrl}/stop-stream`, {
+              userId: userId.current,
+            });
+          } catch (stopErr) {
+            console.error("Failed to stop stream on server:", stopErr);
+          }
+          setVisualizationActive(false);
+          setStatus("تم إيقاف العرض المرئي");
         }
-        setVisualizationActive(false);
-        setStatus("تم إيقاف العرض المرئي");
-        setIsPlaying(false);
 
-        // Pause the main audio
+        // Pause main audio
         if (mainAudioRef.current) {
           mainAudioRef.current.pause();
         }
+
+        setIsPlaying(false);
       } else {
-        // Resume iOS AudioContext if needed
-        if (audioBarsRef.current?.resumeContextIfSuspended) {
-          await audioBarsRef.current.resumeContextIfSuspended();
-        }
-
-        // Start stream on server (for waveform only)
-        const response = await axios.post(`${backendUrl}/stream/start-stream`, {
-          userId: userId.current,
-        });
-        if (response.data && response.data.success) {
-          setVisualizationActive(true);
-          setStatus("تم بدء العرض المرئي");
-          setIsPlaying(true);
-
-          // Play the main audio
-          if (mainAudioRef.current) {
-            await mainAudioRef.current.play();
+        // If desktop, handle waveform
+        if (!isMobile) {
+          // Resume iOS AudioContext if needed, though on desktop it won't matter
+          if (audioBarsRef.current?.resumeContextIfSuspended) {
+            await audioBarsRef.current.resumeContextIfSuspended();
           }
-        } else {
-          throw new Error("فشل بدء العرض المرئي");
+
+          // Start stream on server (for waveform only)
+          const response = await axios.post(`${backendUrl}/stream/start-stream`, {
+            userId: userId.current,
+          });
+          if (response.data && response.data.success) {
+            setVisualizationActive(true);
+            setStatus("تم بدء العرض المرئي");
+          } else {
+            throw new Error("فشل بدء العرض المرئي");
+          }
         }
+
+        // Play main audio
+        if (mainAudioRef.current) {
+          await mainAudioRef.current.play();
+        }
+
+        setIsPlaying(true);
       }
     } catch (error) {
       console.error("Visualization error:", error);
@@ -307,7 +322,6 @@ const Player = () => {
       if (recordingTimeoutRef.current) {
         clearTimeout(recordingTimeoutRef.current);
       }
-      // Pause main audio if needed
       if (mainAudioRef.current) {
         mainAudioRef.current.pause();
       }
@@ -338,7 +352,7 @@ const Player = () => {
         `}
       </style>
 
-      {/* Hidden (or offscreen) audio element for MAIN stable stream */}
+      {/* Hidden main audio element */}
       <audio 
         ref={mainAudioRef}
         controls={false}
@@ -355,18 +369,22 @@ const Player = () => {
         />
       </div>
 
-      {/* Waveform Visualization */}
+      {/* Waveform Visualization (Desktop Only) */}
       <div className="w-full max-w-md mt-2">
-        {isPlaying ? (
+        {(!isMobile && isPlaying) ? (
           <AudioBars
             ref={audioBarsRef}
-            streamUrl={waveformStreamUrl} // <-- Node server URL for waveform
+            streamUrl={waveformStreamUrl}
             active={visualizationActive}
             volume={volume}
           />
         ) : (
           <div className="w-full h-80 bg-[#001f3f] rounded-lg flex items-center justify-center">
-            <p className="text-white/50">اضغط تشغيل لرؤية الموجات</p>
+            <p className="text-white/50">
+              {isMobile
+                ? "موجات الصوت غير متاحة على الجوال"
+                : "اضغط تشغيل لرؤية الموجات"}
+            </p>
           </div>
         )}
       </div>
