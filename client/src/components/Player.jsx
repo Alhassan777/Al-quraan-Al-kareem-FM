@@ -28,18 +28,13 @@ const Player = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("جاهز للتشغيل");
 
-  // Volume state (range 0–100)
-  const [volume, setVolume] = useState(50);
-
-  // Recording duration & unit
+  const [volume, setVolume] = useState(50); // 0–100 range
   const [recordingDuration, setRecordingDuration] = useState(10);
   const [recordingUnit, setRecordingUnit] = useState("seconds");
 
-  // Visual / UI toggles
   const [streamingBlink, setStreamingBlink] = useState(false);
   const [recordingFlip, setRecordingFlip] = useState(false);
 
-  // Timeout reference for auto-stop recording
   const recordingTimeoutRef = useRef(null);
   const isRecordingRef = useRef(false);
 
@@ -51,33 +46,63 @@ const Player = () => {
   const userId = useRef(getUserId());
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Backend URL, stream URL, and waveform activation
+  // URLs and config
   // ─────────────────────────────────────────────────────────────────────────
+  // Node server (for waveform generation & recording)
   const backendUrl =
     import.meta.env.VITE_TESTING_MODE === "TRUE"
       ? import.meta.env.VITE_NODE_DEV_URL
       : import.meta.env.VITE_NODE_PROD_URL;
 
+  // Old fallback (but we’ll have a new main stream URL from .env)
   const fallbackStreamUrl = import.meta.env.VITE_FALLBACK_STREAM_URL;
-  const [streamUrl, setStreamUrl] = useState(fallbackStreamUrl);
+  // The specialized stable platform link
+  const mainStreamUrl = import.meta.env.VITE_MAIN_STREAM_URL;
+
+  // This is the URL we fetch from the Node server for waveform
+  // (In your original code, it’s updated from the server /status endpoint).
+  const [waveformStreamUrl, setWaveformStreamUrl] = useState(fallbackStreamUrl);
   const [visualizationActive, setVisualizationActive] = useState(false);
 
   // Ref to the AudioBars component (forwardRef)
   const audioBarsRef = useRef(null);
 
-  // Fetch the current stream URL from backend
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1) Always-available main audio element for stable playback
+  // ─────────────────────────────────────────────────────────────────────────
+  const mainAudioRef = useRef(null);
+
+  // On mount, set the src and default muted state
+  useEffect(() => {
+    if (mainAudioRef.current) {
+      mainAudioRef.current.src = mainStreamUrl;
+      // Just to be safe, set volume or any other audio settings if needed
+      mainAudioRef.current.volume = volume / 100; 
+    }
+  }, [mainStreamUrl]);
+
+  // Update main audio volume when `volume` changes
+  useEffect(() => {
+    if (mainAudioRef.current) {
+      mainAudioRef.current.volume = volume / 100;
+    }
+  }, [volume]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2) Fetch the Node server stream URL for waveform
+  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchStreamUrl = async () => {
       try {
         const response = await axios.get(`${backendUrl}/status`);
         if (response.data && response.data.streamUrl) {
-          setStreamUrl(response.data.streamUrl);
+          setWaveformStreamUrl(response.data.streamUrl);
         } else {
           console.warn("Stream URL not available from backend. Using fallback.");
         }
       } catch (error) {
         console.error("Error fetching stream URL:", error);
-        setStatus("تعذر جلب رابط البث. سيتم استخدام الرابط الاحتياطي.");
+        setStatus("تعذر جلب رابط البث (للموجات). سيتم استخدام الرابط الاحتياطي.");
       }
     };
     fetchStreamUrl();
@@ -118,7 +143,7 @@ const Player = () => {
 
     try {
       if (isPlaying) {
-        // Stop
+        // Stop the Node server’s stream for waveform
         try {
           await axios.post(`${backendUrl}/stop-stream`, {
             userId: userId.current,
@@ -126,18 +151,21 @@ const Player = () => {
         } catch (stopErr) {
           console.error("Failed to stop stream on server:", stopErr);
         }
-        // Turn off visualization
         setVisualizationActive(false);
         setStatus("تم إيقاف العرض المرئي");
         setIsPlaying(false);
+
+        // Pause the main audio
+        if (mainAudioRef.current) {
+          mainAudioRef.current.pause();
+        }
       } else {
-        // ===== MOBILE SAFARI FIX: Resume audio context if suspended =====
-        // This must happen inside the user-initiated event
+        // Resume iOS AudioContext if needed
         if (audioBarsRef.current?.resumeContextIfSuspended) {
           await audioBarsRef.current.resumeContextIfSuspended();
         }
 
-        // Start stream on server
+        // Start stream on server (for waveform only)
         const response = await axios.post(`${backendUrl}/stream/start-stream`, {
           userId: userId.current,
         });
@@ -145,6 +173,11 @@ const Player = () => {
           setVisualizationActive(true);
           setStatus("تم بدء العرض المرئي");
           setIsPlaying(true);
+
+          // Play the main audio
+          if (mainAudioRef.current) {
+            await mainAudioRef.current.play();
+          }
         } else {
           throw new Error("فشل بدء العرض المرئي");
         }
@@ -158,7 +191,7 @@ const Player = () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RECORDING Logic
+  // RECORDING Logic (unchanged)
   // ─────────────────────────────────────────────────────────────────────────
   const startRecording = async () => {
     setIsProcessing(true);
@@ -176,7 +209,6 @@ const Player = () => {
       setStatus(response.data.message || "تم بدء التسجيل");
       setIsRecording(true);
 
-      // If not manual, set up an auto-stop timer
       if (recordingUnit !== "manual") {
         if (recordingTimeoutRef.current) {
           clearTimeout(recordingTimeoutRef.current);
@@ -235,7 +267,6 @@ const Player = () => {
       setStatus("تم إيقاف التسجيل وجاهز للتنزيل");
       setIsRecording(false);
 
-      // Clear any auto-stop timer
       if (recordingTimeoutRef.current) {
         clearTimeout(recordingTimeoutRef.current);
         recordingTimeoutRef.current = null;
@@ -276,6 +307,10 @@ const Player = () => {
       if (recordingTimeoutRef.current) {
         clearTimeout(recordingTimeoutRef.current);
       }
+      // Pause main audio if needed
+      if (mainAudioRef.current) {
+        mainAudioRef.current.pause();
+      }
     };
   }, []);
 
@@ -303,6 +338,14 @@ const Player = () => {
         `}
       </style>
 
+      {/* Hidden (or offscreen) audio element for MAIN stable stream */}
+      <audio 
+        ref={mainAudioRef}
+        controls={false}
+        autoPlay={false}
+        style={{ display: "none" }} 
+      />
+
       {/* Logo / Title */}
       <div className="flex flex-col items-center mt-4">
         <img
@@ -316,8 +359,8 @@ const Player = () => {
       <div className="w-full max-w-md mt-2">
         {isPlaying ? (
           <AudioBars
-            ref={audioBarsRef}  // <--- forwardRef
-            streamUrl={streamUrl}
+            ref={audioBarsRef}
+            streamUrl={waveformStreamUrl} // <-- Node server URL for waveform
             active={visualizationActive}
             volume={volume}
           />

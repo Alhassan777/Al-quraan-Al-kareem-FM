@@ -7,10 +7,6 @@ import React, {
   forwardRef,
 } from "react";
 
-/**
- * Helper function to detect mobile devices.
- * This is a basic check; adjust if needed for your user base.
- */
 const isMobileDevice = () => {
   if (typeof navigator === "undefined") return false;
   return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -28,11 +24,7 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
   const gainNodeRef = useRef(null);
   const audioRef = useRef(null);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 1) Imperative Handle for iOS Resume
-  // ─────────────────────────────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
-    /** Called by parent (in user gesture) to force-resume the context on iOS */
     async resumeContextIfSuspended() {
       if (
         audioContextRef.current &&
@@ -40,7 +32,6 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
       ) {
         try {
           await audioContextRef.current.resume();
-          // Also explicitly call `play()` on the audio element
           if (audioRef.current?.paused) {
             await audioRef.current.play();
           }
@@ -51,82 +42,44 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     },
   }));
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 2) Set up (and tear down) audio when `streamUrl` or `active` changes
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!active) return;
 
     const initAudio = async () => {
       try {
-        let audioElement;
-
-        /**
-         * 1) If `streamUrl` is a normal URL (e.g. https://example.com/audio.mp3),
-         *    just create a new Audio() from that URL.
-         *
-         * 2) If `streamUrl` is a BLOB URL (e.g. blob:http://localhost:3000/...),
-         *    or if you have a Blob object, set the MIME type explicitly if needed.
-         */
-        if (typeof streamUrl === "string" && streamUrl.startsWith("blob:")) {
-          // If it's a blob: URL, we can just use it directly
-          audioElement = new Audio(streamUrl);
-        } else if (streamUrl instanceof Blob) {
-          // If streamUrl is an actual Blob object (e.g. from a recorder),
-          // ensure it has a MIME type. Example: { type: "audio/wav" }
-          const typedBlob =
-            streamUrl.type && streamUrl.type.startsWith("audio/")
-              ? streamUrl
-              : new Blob([streamUrl], { type: "audio/wav" }); // fallback
-
-          const blobUrl = URL.createObjectURL(typedBlob);
-          audioElement = new Audio(blobUrl);
-        } else {
-          // Normal URL (HTTP/S)
-          audioElement = new Audio(streamUrl);
-        }
-
-        // Set crossOrigin to "anonymous" for Web Audio analysis (CORS)
+        const audioElement = new Audio(streamUrl);
         audioElement.crossOrigin = "anonymous";
+        // We do not want the user to hear this stream
+        // so we can do either audioElement.muted = true; 
+        // or remove the connection to destination as shown below.
 
-        // Optionally, listen for any error
-        audioElement.onerror = (e) => {
-          console.error("Audio element error:", e, audioElement.error);
-        };
-
-        // Attach to ref
         audioRef.current = audioElement;
         audioElement.load();
 
-        // Create the AudioContext
         const AudioContextClass =
           window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContextClass();
 
-        // Decide on FFT size and smoothing based on device
         const mobile = isMobileDevice();
         const analyzer = audioContext.createAnalyser();
-        analyzer.fftSize = mobile ? 64 : 128; // smaller on mobile, bigger on desktop
+        analyzer.fftSize = mobile ? 64 : 128;
         analyzer.smoothingTimeConstant = mobile ? 0.7 : 0.6;
 
-        // Create a GainNode to handle volume
         const gainNode = audioContext.createGain();
-        gainNode.gain.value = volume / 100; // initial volume
+        gainNode.gain.value = volume / 100; 
 
-        // Create a MediaElementSource from <audio>
         const sourceNode = audioContext.createMediaElementSource(audioElement);
         sourceNode.connect(gainNode);
         gainNode.connect(analyzer);
-        analyzer.connect(audioContext.destination);
+        // We DO NOT connect analyzer to destination. 
+        // That means no audible output from this stream.
+        // analyzer.connect(audioContext.destination);
 
-        // Store references
         audioContextRef.current = audioContext;
         analyzerRef.current = analyzer;
         gainNodeRef.current = gainNode;
 
-        // Start playback
         await audioElement.play();
-        // On iOS, might still need resumeContextIfSuspended in the same gesture
       } catch (error) {
         console.error("Error initializing audio:", error);
       }
@@ -135,7 +88,6 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     initAudio();
 
     return () => {
-      // Cleanup if `active` changes to false or component unmounts
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
@@ -155,18 +107,13 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     };
   }, [streamUrl, active]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 3) Update GainNode volume whenever `volume` changes
-  // ─────────────────────────────────────────────────────────────────────────
+  // Update GainNode volume if you like (though it’s not actually audible)
   useEffect(() => {
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = volume / 100;
     }
   }, [volume]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 4) Visualization loop
-  // ─────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!active || !canvasRef.current || !analyzerRef.current) return;
 
@@ -176,10 +123,8 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     const bufferLength = analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
-    // For smoothing bar animations
     const previousHeights = new Array(bufferLength).fill(0);
 
-    // Handle device pixel ratio for sharper rendering on high-DPI screens
     const dpr = window.devicePixelRatio || 1;
     const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect();
     canvas.width = cssWidth * dpr;
@@ -187,58 +132,40 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
     ctx.scale(dpr, dpr);
 
     const draw = () => {
-      if (!active) return; // if no longer active, cancel
+      if (!active) return;
       animationRef.current = requestAnimationFrame(draw);
 
       analyzer.getByteFrequencyData(dataArray);
 
-      // Clear the entire drawing surface
       ctx.clearRect(0, 0, cssWidth, cssHeight);
-
-      // Background
       ctx.fillStyle = "#001f3f";
       ctx.fillRect(0, 0, cssWidth, cssHeight);
 
       const barWidth = cssWidth / bufferLength;
       const baseY = cssHeight;
-      const stdDev = 0.4; // The width of the Gaussian peak
+      const stdDev = 0.4;
       const halfBufferLength = Math.floor(bufferLength / 2);
 
       for (let i = 0; i < bufferLength; i++) {
-        // Normalized distance from the canvas center
         const normalizedPosition =
           (i - (bufferLength - 1) / 2) / ((bufferLength - 1) / 2);
-
-        // Gaussian factor for a bell-curve shape
         const gaussianFactor = Math.exp(
           -Math.pow(normalizedPosition / stdDev, 2) / 2
         );
-
-        // Combine mirrored frequencies for symmetry
         const combinedData =
           (dataArray[i] + dataArray[bufferLength - i - 1]) / 2;
-
-        // Scale bar height
         const targetHeight =
           (combinedData / 255) * cssHeight * 1.9 * gaussianFactor;
 
-        // Smooth transition for the bar height
         previousHeights[i] = previousHeights[i] * 0.7 + targetHeight * 0.3;
         const barHeight = previousHeights[i];
 
-        // Center bars
         const x = cssWidth / 2 + (i - halfBufferLength) * barWidth;
 
-        // Create gradient
-        const gradient = ctx.createLinearGradient(
-          0,
-          baseY - barHeight,
-          0,
-          baseY
-        );
-        gradient.addColorStop(0, "#FF0000"); // Red
-        gradient.addColorStop(0.5, "#FFA500"); // Orange
-        gradient.addColorStop(1, "#00FFFF"); // Cyan
+        const gradient = ctx.createLinearGradient(0, baseY - barHeight, 0, baseY);
+        gradient.addColorStop(0, "#FF0000");
+        gradient.addColorStop(0.5, "#FFA500");
+        gradient.addColorStop(1, "#00FFFF");
 
         ctx.fillStyle = gradient;
         ctx.fillRect(x, baseY - barHeight, barWidth, barHeight);
@@ -247,7 +174,6 @@ const AudioBars = forwardRef(({ streamUrl, active, volume = 50 }, ref) => {
 
     draw();
 
-    // Cancel the animation loop if effect cleans up
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
