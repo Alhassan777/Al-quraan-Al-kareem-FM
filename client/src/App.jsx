@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, lazy, Suspense, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Header from './components/Header.jsx';
 import Player from './components/Player.jsx';
@@ -6,11 +6,12 @@ import Status from './components/Status.jsx';
 import TimezoneDetector from './components/TimezoneDetector.jsx';
 import Reminders from './components/Reminders.jsx';
 
-// Import Page Components
-import SchedulePage from './pages/SchedulePage.jsx';
-import ContactPage from './pages/ContactPage.jsx';
+import { Helmet } from 'react-helmet';
 
 import './style/global.css';
+
+const SchedulePage = lazy(() => import('./pages/SchedulePage.jsx'));
+const ContactPage = lazy(() => import('./pages/ContactPage.jsx'));
 
 export default function App() {
   const [statusMessage, setStatusMessage] = useState(
@@ -23,10 +24,32 @@ export default function App() {
     setVolume(newVolume);
   };
 
+  // Add Google Analytics Tag
+  useEffect(() => {
+    const script1 = document.createElement('script');
+    script1.src = 'https://www.googletagmanager.com/gtag/js?id=G-83PCDBHL22';
+    script1.async = true;
+    document.head.appendChild(script1);
+
+    const script2 = document.createElement('script');
+    script2.innerHTML = `
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-83PCDBHL22');
+    `;
+    document.head.appendChild(script2);
+
+    return () => {
+      document.head.removeChild(script1);
+      document.head.removeChild(script2);
+    };
+  }, []);
+
   return (
     <>
-      {/* SEO Meta Tags */}
-      <head>
+      <Helmet>
+        {/* SEO Meta Tags */}
         <title>إذاعة القرآن الكريم من القاهرة - بث مباشر</title>
         <meta
           name="description"
@@ -36,42 +59,40 @@ export default function App() {
           name="keywords"
           content="إذاعة القرآن الكريم, بث مباشر, القرآن الكريم, الإذاعة من القاهرة, جدول البرامج, تلاوات كاملة, قوائم تشغيل, تذكيرات إسلامية"
         />
-        <meta name="author" content="اسمك أو اسم المشروع" />
-      </head>
+        <meta name="author" content="إذاعة القرآن الكريم" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-      {/* Structured Data */}
-      <script type="application/ld+json">
-        {JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          "name": "إذاعة القرآن الكريم من القاهرة",
-          "url": "https://qurankareemradio.com",
-          "description": "البث المباشر للإذاعة القرآن الكريم من القاهرة مع ميزات مثل الجدول الزمني اليومي وقوائم تشغيل التلاوات الكاملة.",
-          "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://qurankareemradio.com/search?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-          }
-        })}
-      </script>
+        {/* Open Graph */}
+        <meta property="og:title" content="إذاعة القرآن الكريم من القاهرة - بث مباشر" />
+        <meta
+          property="og:description"
+          content="استمع إلى التلاوات والبرامج الدينية من إذاعة القرآن الكريم. بث مباشر على مدار الساعة."
+        />
+        <meta property="og:image" content="https://qurankareemradio.com/website-thumbnail.png" />
+        <meta property="og:url" content="https://qurankareemradio.com" />
+        <meta property="og:type" content="website" />
 
-      {/* Main Page Content */}
+        {/* Twitter Card */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="إذاعة القرآن الكريم من القاهرة - بث مباشر" />
+        <meta
+          name="twitter:description"
+          content="استمع إلى إذاعة القرآن الكريم من القاهرة مباشرة واستمتع ببرامج دينية وتلاوات قرآنية رائعة."
+        />
+        <meta name="twitter:image" content="https://qurankareemradio.com/website-thumbnail.png" />
+      </Helmet>
+
       <div className="min-h-screen bg-[#0A1828] text-[#C4A661] flex flex-col items-center">
         {/* Hidden SEO Content */}
         <div className="sr-only" aria-hidden="true">
-          إذاعة القرآن الكريم من القاهرة تقدم لك بثًا مباشرًا على مدار الساعة. استمتع بميزات مثل مشغل مباشر، جدول برامج يومي، قوائم تشغيل تلاوات القرآن الكريم الكاملة، وتذكيرات إسلامية. استمع لتلاوات أبرز القراء مثل الشيخ عبد الباسط والشيخ المنشاوي وغيرهم.
+          إذاعة القرآن الكريم من القاهرة تقدم بثًا مباشرًا على مدار الساعة. استمتع بميزات مثل مشغل مباشر، جدول برامج يومي، قوائم تشغيل للتلاوات، وتذكيرات إسلامية.
         </div>
 
-        {/* Timezone Detection */}
+        {/* Components */}
         <TimezoneDetector />
-
-        {/* Header Component */}
         <Header />
-
-        {/* Reminders Component */}
         <Reminders />
 
-        {/* Main Content */}
         <main className="w-full max-w-5xl px-4 py-6 space-y-6">
           {/* Status Display */}
           <Status message={statusMessage} type={statusType} />
@@ -82,7 +103,7 @@ export default function App() {
               path="/"
               element={
                 <Player
-                  streamUrl="https://n10.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABk-06_7wAAb2D9o5zdb4y4A"
+                  streamUrl={import.meta.env.VITE_STREAM_URL}
                   setStatusMessage={setStatusMessage}
                   setStatusType={setStatusType}
                   volume={volume}
@@ -90,8 +111,22 @@ export default function App() {
                 />
               }
             />
-            <Route path="/schedule" element={<SchedulePage />} />
-            <Route path="/contact" element={<ContactPage />} />
+            <Route
+              path="/schedule"
+              element={
+                <Suspense fallback={<div>Loading...</div>}>
+                  <SchedulePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/contact"
+              element={
+                <Suspense fallback={<div>Loading...</div>}>
+                  <ContactPage />
+                </Suspense>
+              }
+            />
           </Routes>
         </main>
       </div>

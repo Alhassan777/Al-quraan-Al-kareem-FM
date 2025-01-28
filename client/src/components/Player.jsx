@@ -363,7 +363,7 @@ const Player = () => {
       {/* Logo / Title */}
       <div className="flex flex-col items-center mt-4">
         <img
-          src="/logo.png"
+          src="/logo.webp"
           alt="شعار المحطة"
           className="w-32 h-32 object-contain mb-4"
         />
@@ -493,7 +493,7 @@ const Player = () => {
           {/* Recording Indicator */}
           <div className="flex items-center space-x-3">
             <img
-              src={isRecording ? "/Recording On.png" : "/Recording Off.png"}
+              src={isRecording ? "/Recording_On.webp" : "/Recording_On.webp"}
               alt="Recording"
               className={`w-6 h-6 ${recordingFlip ? "flip-animation" : ""}`}
             />
@@ -506,9 +506,9 @@ const Player = () => {
               src={
                 isPlaying
                   ? streamingBlink
-                    ? "/Streaming On.png"
-                    : "/Streaming Off.png"
-                  : "/Streaming Off.png"
+                    ? "/Streaming On.webp"
+                    : "/Streaming_Off.webp"
+                  : "/Streaming_Off.webp"
               }
               alt="Live"
               className="w-6 h-6"
