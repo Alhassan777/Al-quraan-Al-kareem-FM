@@ -1,3 +1,33 @@
+# Robots.txt for qurankareemradio.com
+# إذاعة القرآن الكريم من القاهرة
+
 User-agent: *
 Allow: /
+Allow: /schedule
+Allow: /contact
+
+# Disallow unnecessary paths
+Disallow: /api/
+Disallow: /*.json$
+Disallow: /src/
+
+# Crawl-delay for polite crawling (in seconds)
+Crawl-delay: 1
+
+# Sitemap location
 Sitemap: https://qurankareemradio.com/sitemap.xml
+
+# Google specific
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+# Bing specific
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 2
+
+# Yandex specific (popular in Arabic regions)
+User-agent: Yandex
+Allow: /
+Crawl-delay: 2

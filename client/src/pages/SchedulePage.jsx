@@ -1,6 +1,5 @@
-"use client";
-
 import React from 'react';
+import { Helmet } from 'react-helmet';
 import Schedule from '../components/Schedule.jsx';
 import TimezoneDetector from '../components/TimezoneDetector.jsx';
 import Reminders from '../components/Reminders.jsx';
@@ -8,48 +7,69 @@ import Reminders from '../components/Reminders.jsx';
 const SchedulePage = () => {
   return (
     <>
-      {/* Meta Tags for SEO */}
-      <head>
+      {/* SEO Meta Tags using Helmet */}
+      <Helmet>
+        <title>جدول البرامج - إذاعة القرآن الكريم من القاهرة | Schedule</title>
         <meta 
           name="description" 
-          content="اكتشف قاعدة بيانات شاملة لجميع قراء إذاعة القرآن الكريم من القاهرة. تصفح قوائم تشغيل لتلاواتهم الكاملة للقرآن الكريم، مع مواعيد وبرامج يومية مخصصة." 
+          content="اكتشف جدول برامج إذاعة القرآن الكريم من القاهرة. تصفح مواعيد التلاوات والبرامج الدينية اليومية مع التوقيت المحلي. Daily Quran Radio Schedule from Cairo." 
         />
         <meta 
           name="keywords" 
-          content="إذاعة القرآن الكريم, القاهرة, تلاوات كاملة, قاعدة بيانات القراء, قوائم تشغيل القرآن, برامج إسلامية, أوقات الصلاة, القرآن الكريم" 
+          content="جدول البرامج, إذاعة القرآن الكريم, القاهرة, تلاوات, برامج إسلامية, أوقات الصلاة, القرآن الكريم, Quran Schedule, Radio Program" 
         />
-        <meta name="author" content="اسمك أو اسم المشروع" />
-      </head>
+        <link rel="canonical" href="https://qurankareemradio.com/schedule" />
+        
+        {/* Open Graph */}
+        <meta property="og:title" content="جدول البرامج - إذاعة القرآن الكريم من القاهرة" />
+        <meta property="og:description" content="تصفح جدول برامج إذاعة القرآن الكريم اليومي مع مواعيد التلاوات والبرامج الدينية." />
+        <meta property="og:url" content="https://qurankareemradio.com/schedule" />
+        <meta property="og:type" content="website" />
+        
+        {/* Twitter */}
+        <meta name="twitter:title" content="جدول البرامج - إذاعة القرآن الكريم" />
+        <meta name="twitter:description" content="جدول برامج إذاعة القرآن الكريم من القاهرة - مواعيد التلاوات والبرامج الدينية" />
 
-      {/* Structured Data */}
-      <script type="application/ld+json">
-        {JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "ItemList",
-          "name": "قوائم تشغيل قراء القرآن الكريم",
-          "description": "قاعدة بيانات شاملة لجميع قراء إذاعة القرآن الكريم من القاهرة، مع قوائم تشغيل لتلاواتهم الكاملة.",
-          "itemListElement": [
-            {
-              "@type": "MusicGroup",
-              "name": "الشيخ عبد الباسط عبد الصمد",
-              "url": "/playlists/abdul-basit",
-              "sameAs": "https://qurankareemradio.com/reciters/abdul-basit",
+        {/* Structured Data */}
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "name": "جدول البرامج - إذاعة القرآن الكريم من القاهرة",
+            "description": "جدول برامج إذاعة القرآن الكريم اليومي مع مواعيد التلاوات والبرامج الدينية",
+            "url": "https://qurankareemradio.com/schedule",
+            "isPartOf": {
+              "@type": "WebSite",
+              "name": "إذاعة القرآن الكريم من القاهرة",
+              "url": "https://qurankareemradio.com"
             },
-            {
-              "@type": "MusicGroup",
-              "name": "الشيخ محمد صديق المنشاوي",
-              "url": "/playlists/al-minshawi",
-              "sameAs": "https://qurankareemradio.com/reciters/al-minshawi",
+            "breadcrumb": {
+              "@type": "BreadcrumbList",
+              "itemListElement": [
+                {
+                  "@type": "ListItem",
+                  "position": 1,
+                  "name": "الرئيسية",
+                  "item": "https://qurankareemradio.com/"
+                },
+                {
+                  "@type": "ListItem",
+                  "position": 2,
+                  "name": "جدول البرامج",
+                  "item": "https://qurankareemradio.com/schedule"
+                }
+              ]
             }
-          ]
-        })}
-      </script>
+          })}
+        </script>
+      </Helmet>
 
       {/* Page Content */}
       <div className="min-h-screen bg-[#0A1828] text-[#C4A661]">
         {/* Hidden SEO Content */}
         <div className="sr-only" aria-hidden="true">
-          تصفح قاعدة بيانات شاملة لجميع قراء إذاعة القرآن الكريم من القاهرة. احصل على قوائم تشغيل لتلاوات القرآن الكريم الكاملة، مع جدول يومي مخصص للتوقيت المحلي الخاص بك. استمتع بميزات مثل تسجيل التلاوات وتذكيرات إسلامية لتحسين عاداتك اليومية.
+          <h1>جدول برامج إذاعة القرآن الكريم من القاهرة</h1>
+          <p>تصفح جدول البرامج اليومي لإذاعة القرآن الكريم. احصل على مواعيد التلاوات والبرامج الدينية بالتوقيت المحلي.</p>
         </div>
 
         {/* Timezone Detector */}
@@ -60,6 +80,9 @@ const SchedulePage = () => {
 
         {/* Schedule Component */}
         <main className="max-w-5xl mx-auto px-4 py-6">
+          <h1 className="text-2xl font-bold text-center mb-6 text-[#C4A661]">
+            جدول البرامج اليومي
+          </h1>
           <Schedule />
         </main>
       </div>

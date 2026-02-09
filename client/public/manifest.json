@@ -1,0 +1,43 @@
+{
+  "name": "إذاعة القرآن الكريم من القاهرة",
+  "short_name": "القرآن الكريم",
+  "description": "استمع إلى إذاعة القرآن الكريم من القاهرة مباشرة على مدار الساعة. بث مباشر للتلاوات القرآنية والبرامج الدينية.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A1828",
+  "theme_color": "#C4A661",
+  "orientation": "portrait-primary",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["entertainment", "music", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/logo.webp",
+      "sizes": "192x192",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/Thumbnail.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/Website Thumbnail.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "إذاعة القرآن الكريم - الصفحة الرئيسية"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
