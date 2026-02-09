@@ -24,6 +24,10 @@ const app = express();
 
 /**************************************
  * ENV + PORT
+ * Railway injects process.env.PORT (e.g. 8080). If Railway still routes to 3000
+ * and you get 502 "connection refused", either: (1) In Railway → Settings →
+ * Networking, set "Internal port" to the port this app prints (e.g. 8080), or
+ * (2) In Railway env vars set PORT=3000 so the app listens where Railway routes.
  **************************************/
 const environment = process.env.ENVIRONMENT || "development";
 const PORT = process.env.PORT || 3000;
@@ -354,6 +358,34 @@ app.post("/stop-stream", (req, res) => {
 });
 
 /**************************************
+ * SERVE STATIC FILES (robots.txt, sitemap.xml)
+ **************************************/
+// Determine path to client/public directory
+const clientPublicDir = path.resolve(__dirname, "../../client/public");
+
+app.get("/robots.txt", (req, res) => {
+  const robotsPath = path.join(clientPublicDir, "robots.txt");
+  if (fs.existsSync(robotsPath)) {
+    res.type("text/plain");
+    res.sendFile(robotsPath);
+  } else {
+    console.error(`robots.txt not found at: ${robotsPath}`);
+    res.status(404).send("robots.txt not found");
+  }
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  const sitemapPath = path.join(clientPublicDir, "sitemap.xml");
+  if (fs.existsSync(sitemapPath)) {
+    res.type("application/xml");
+    res.sendFile(sitemapPath);
+  } else {
+    console.error(`sitemap.xml not found at: ${sitemapPath}`);
+    res.status(404).send("sitemap.xml not found");
+  }
+});
+
+/**************************************
  * STATUS
  **************************************/
 app.get("/status", (req, res) => {
@@ -417,8 +449,10 @@ app.get("/stream", async (req, res) => {
 
 /**************************************
  * START SERVER
+ * Use process.env.PORT (do not set PORT in Railway env — let Railway assign it).
+ * Bind to 0.0.0.0 so the container accepts connections from the proxy.
  **************************************/
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${environment}`);
   console.log("HARDCODED ALLOWED_ORIGINS:", ALLOWED_ORIGINS);
